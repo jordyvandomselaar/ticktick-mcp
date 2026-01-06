@@ -221,7 +221,10 @@ export interface Task {
 export interface CreateTaskInput {
   /** Task title (required) */
   title: string;
-  /** Project ID (defaults to inbox if not specified) */
+  /**
+   * Project ID - if not specified, task will be created in the default inbox project.
+   * Note: API behavior may vary - if tasks are not appearing, provide an explicit projectId.
+   */
   projectId?: string;
   /** Task description/notes */
   content?: string;
