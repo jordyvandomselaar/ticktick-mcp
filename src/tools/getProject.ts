@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { TickTickClient } from "../sdk/client.js";
+import { TickTickNotFoundError } from "../sdk/errors.js";
 
 /**
  * Tool: Get project with tasks
@@ -76,6 +77,27 @@ export function registerGetProjectTool(
           ],
         };
       } catch (error) {
+        // Handle project not found specifically
+        if (error instanceof TickTickNotFoundError) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    success: false,
+                    error: `Project with ID "${projectId}" not found. Use list_projects to see all available projects.`,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        // Generic error handling
         const errorMessage =
           error instanceof Error ? error.message : String(error);
         return {
