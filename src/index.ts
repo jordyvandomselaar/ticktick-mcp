@@ -840,14 +840,91 @@ server.tool(
  */
 server.tool(
   "list_tasks_in_project",
-  "List all tasks in a specific project. Returns only the tasks array without project metadata.",
+  "List all tasks in a specific project with optional client-side filtering. Returns only the tasks array without project metadata.",
   {
     projectId: z.string().describe("The ID of the project to list tasks from"),
+    status: z.enum(['active', 'completed', 'all']).optional().describe("Filter by task status (default: 'all')"),
+    priority: z.union([z.number(), z.array(z.number())]).optional().describe("Filter by priority: single value (0,1,3,5) or array [0,1,3,5]"),
+    dueBefore: z.string().optional().describe("ISO date - include only tasks due before this date"),
+    dueAfter: z.string().optional().describe("ISO date - include only tasks due after this date"),
+    startBefore: z.string().optional().describe("ISO date - include only tasks starting before this date"),
+    startAfter: z.string().optional().describe("ISO date - include only tasks starting after this date"),
+    hasSubtasks: z.boolean().optional().describe("Filter by presence of subtasks: true=with subtasks, false=without"),
+    tags: z.array(z.string()).optional().describe("Filter by tags - include tasks with any of these tags"),
+    search: z.string().optional().describe("Text search - filter tasks whose title or content contains this text (case-insensitive)"),
+    limit: z.number().optional().describe("Maximum number of tasks to return"),
   },
-  async ({ projectId }) => {
+  async ({ projectId, status, priority, dueBefore, dueAfter, startBefore, startAfter, hasSubtasks, tags, search, limit }) => {
     try {
       const client = await getClient();
       const data = await client.getProjectWithTasks(projectId);
+
+      // Apply filters
+      let filteredTasks = data.tasks;
+
+      // Filter by status
+      if (status && status !== 'all') {
+        filteredTasks = filteredTasks.filter(t => {
+          if (status === 'active') return t.status === 0;
+          if (status === 'completed') return t.status === 2;
+          return true;
+        });
+      }
+
+      // Filter by priority
+      if (priority !== undefined) {
+        const priorities = Array.isArray(priority) ? priority : [priority];
+        filteredTasks = filteredTasks.filter(t => priorities.includes(t.priority));
+      }
+
+      // Filter by due date
+      if (dueBefore) {
+        const beforeDate = new Date(dueBefore);
+        filteredTasks = filteredTasks.filter(t => t.dueDate && new Date(t.dueDate) < beforeDate);
+      }
+      if (dueAfter) {
+        const afterDate = new Date(dueAfter);
+        filteredTasks = filteredTasks.filter(t => t.dueDate && new Date(t.dueDate) > afterDate);
+      }
+
+      // Filter by start date
+      if (startBefore) {
+        const beforeDate = new Date(startBefore);
+        filteredTasks = filteredTasks.filter(t => t.startDate && new Date(t.startDate) < beforeDate);
+      }
+      if (startAfter) {
+        const afterDate = new Date(startAfter);
+        filteredTasks = filteredTasks.filter(t => t.startDate && new Date(t.startDate) > afterDate);
+      }
+
+      // Filter by subtasks
+      if (hasSubtasks !== undefined) {
+        filteredTasks = filteredTasks.filter(t => {
+          const hasItems = t.items && t.items.length > 0;
+          return hasSubtasks ? hasItems : !hasItems;
+        });
+      }
+
+      // Filter by tags
+      if (tags && tags.length > 0) {
+        filteredTasks = filteredTasks.filter(t => {
+          return t.tags && t.tags.some(tag => tags.includes(tag));
+        });
+      }
+
+      // Filter by search text
+      if (search) {
+        const searchLower = search.toLowerCase();
+        filteredTasks = filteredTasks.filter(t => {
+          return t.title.toLowerCase().includes(searchLower) ||
+                 (t.content && t.content.toLowerCase().includes(searchLower));
+        });
+      }
+
+      // Apply limit
+      if (limit && limit > 0) {
+        filteredTasks = filteredTasks.slice(0, limit);
+      }
 
       return {
         content: [
@@ -856,8 +933,9 @@ server.tool(
             text: JSON.stringify(
               {
                 success: true,
-                count: data.tasks.length,
-                tasks: data.tasks.map((t) => ({
+                total: data.tasks.length,
+                count: filteredTasks.length,
+                tasks: filteredTasks.map((t) => ({
                   id: t.id,
                   title: t.title,
                   content: t.content,
@@ -865,7 +943,7 @@ server.tool(
                   status: t.status,
                   dueDate: t.dueDate,
                   startDate: t.startDate,
-                  allDay: t.allDay,
+                  isAllDay: t.isAllDay,
                   tags: t.tags,
                   items: t.items?.map((item) => ({
                     id: item.id,
@@ -929,7 +1007,7 @@ server.tool(
       .optional()
       .describe("Priority: 0=None, 1=Low, 3=Medium, 5=High"),
     tags: z.array(z.string()).optional().describe("Array of tag names"),
-    allDay: z
+    isAllDay: z
       .boolean()
       .optional()
       .describe("Whether this is an all-day task (no specific time)"),
@@ -964,7 +1042,7 @@ server.tool(
       .optional()
       .describe("Array of subtask/checklist items"),
   },
-  async ({ title, projectId, content, dueDate, priority, tags, allDay, startDate, timeZone, reminders, repeat, items }) => {
+  async ({ title, projectId, content, dueDate, priority, tags, isAllDay, startDate, timeZone, reminders, repeat, items }) => {
     try {
       const client = await getClient();
       const task = await client.createTask({
@@ -973,11 +1051,11 @@ server.tool(
         content,
         dueDate,
         priority,
-        allDay,
+        isAllDay,
         startDate,
         timeZone,
         reminders,
-        repeat,
+        repeatFlag: repeat,
         items,
       });
 
@@ -1003,10 +1081,10 @@ server.tool(
                   priority: finalTask.priority,
                   dueDate: finalTask.dueDate,
                   startDate: finalTask.startDate,
-                  allDay: finalTask.allDay,
+                  isAllDay: finalTask.isAllDay,
                   timeZone: finalTask.timeZone,
                   reminders: finalTask.reminders,
-                  repeat: finalTask.repeat,
+                  repeat: finalTask.repeatFlag,
                   status: finalTask.status,
                   tags: finalTask.tags,
                   items: finalTask.items?.map((item) => ({
@@ -1073,7 +1151,7 @@ server.tool(
       .string()
       .optional()
       .describe("Move task to a different project by specifying the target project ID"),
-    allDay: z
+    isAllDay: z
       .boolean()
       .optional()
       .describe("Whether this is an all-day task (no specific time)"),
@@ -1111,7 +1189,7 @@ server.tool(
       .optional()
       .describe("Array of subtask/checklist items. Note: This replaces existing items when provided."),
   },
-  async ({ taskId, title, content, dueDate, priority, tags, projectId, allDay, startDate, timeZone, reminders, repeat, items }) => {
+  async ({ taskId, title, content, dueDate, priority, tags, projectId, isAllDay, startDate, timeZone, reminders, repeat, items }) => {
     try {
       const client = await getClient();
       const task = await client.updateTask(taskId, {
@@ -1121,11 +1199,11 @@ server.tool(
         priority,
         tags,
         projectId,
-        allDay,
+        isAllDay,
         startDate,
         timeZone,
         reminders: reminders === null ? undefined : reminders,
-        repeat: repeat === null ? "" : repeat,
+        repeatFlag: repeat === null ? "" : repeat,
         items,
       });
 
@@ -1145,10 +1223,10 @@ server.tool(
                   priority: task.priority,
                   dueDate: task.dueDate,
                   startDate: task.startDate,
-                  allDay: task.allDay,
+                  isAllDay: task.isAllDay,
                   timeZone: task.timeZone,
                   reminders: task.reminders,
-                  repeat: task.repeat,
+                  repeat: task.repeatFlag,
                   status: task.status,
                   tags: task.tags,
                   items: task.items?.map((item) => ({
@@ -1330,7 +1408,7 @@ server.tool(
                   status: task.status,
                   dueDate: task.dueDate,
                   startDate: task.startDate,
-                  allDay: task.allDay,
+                  isAllDay: task.isAllDay,
                   tags: task.tags,
                   items: task.items.map((item) => ({
                     id: item.id,

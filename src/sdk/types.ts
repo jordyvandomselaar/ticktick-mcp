@@ -20,11 +20,24 @@ export enum Priority {
 }
 
 /**
- * Task/checklist item status.
+ * Task status.
+ * Note: Task and ChecklistItem have different completed values.
  */
-export enum Status {
-  Normal = 0,
-  Completed = 1,
+export enum TaskStatus {
+  /** Task is active and not yet completed */
+  Active = 0,
+  /** Task has been completed */
+  Completed = 2,
+}
+
+/**
+ * Checklist item status.
+ */
+export enum ChecklistItemStatus {
+  /** Subtask is unchecked/incomplete */
+  Unchecked = 0,
+  /** Subtask is checked/complete */
+  Checked = 1,
 }
 
 /**
@@ -76,7 +89,7 @@ export interface ChecklistItem {
   /** Item text/title */
   title: string;
   /** Item status: 0 = unchecked, 1 = checked */
-  status: Status;
+  status: ChecklistItemStatus;
   /** When the item was completed (ISO 8601) */
   completedTime: string | null;
   /** Whether this has an all-day date */
@@ -96,7 +109,7 @@ export interface ChecklistItemInput {
   /** Item text/title */
   title: string;
   /** Item status: 0 = unchecked, 1 = checked */
-  status?: Status;
+  status?: ChecklistItemStatus;
   /** Whether this has an all-day date */
   isAllDay?: boolean;
   /** Start date (ISO 8601) */
@@ -131,7 +144,7 @@ export interface Task {
 
   // Timing
   /** Whether this is an all-day task */
-  allDay: boolean;
+  isAllDay: boolean;
   /** Start date (ISO 8601) */
   startDate: string | null;
   /** Due date (ISO 8601) */
@@ -145,13 +158,13 @@ export interface Task {
   /** Array of reminders (iCalendar TRIGGER format) */
   reminders: string[];
   /** Recurrence rule (RRULE format) */
-  repeat: string;
+  repeatFlag: string;
 
   // Status & Priority
   /** Priority: 0=None, 1=Low, 3=Medium, 5=High */
   priority: Priority;
-  /** Status: 0=Normal, 1=Completed */
-  status: Status;
+  /** Status: 0=Normal, 2=Completed */
+  status: TaskStatus;
   /** When task was completed (ISO 8601) */
   completedTime: string | null;
 
@@ -191,7 +204,7 @@ export interface CreateTaskInput {
   /** Task description/notes */
   content?: string;
   /** Whether this is an all-day task */
-  allDay?: boolean;
+  isAllDay?: boolean;
   /** Start date (ISO 8601: yyyy-MM-dd'T'HH:mm:ssZ) */
   startDate?: string;
   /** Due date (ISO 8601: yyyy-MM-dd'T'HH:mm:ssZ) */
@@ -201,7 +214,7 @@ export interface CreateTaskInput {
   /** Array of reminders in iCalendar TRIGGER format */
   reminders?: string[];
   /** Recurrence rule in RRULE format */
-  repeat?: string;
+  repeatFlag?: string;
   /** Priority: 0=None, 1=Low, 3=Medium, 5=High */
   priority?: Priority;
   /** Array of subtask/checklist items */
@@ -220,7 +233,7 @@ export interface UpdateTaskInput {
   /** Task description/notes */
   content?: string;
   /** Whether this is an all-day task */
-  allDay?: boolean;
+  isAllDay?: boolean;
   /** Start date (ISO 8601) */
   startDate?: string | null;
   /** Due date (ISO 8601) */
@@ -230,7 +243,7 @@ export interface UpdateTaskInput {
   /** Array of reminders in iCalendar TRIGGER format */
   reminders?: string[];
   /** Recurrence rule in RRULE format */
-  repeat?: string;
+  repeatFlag?: string;
   /** Priority: 0=None, 1=Low, 3=Medium, 5=High */
   priority?: Priority;
   /** Array of subtask/checklist items */

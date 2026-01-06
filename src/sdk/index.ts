@@ -5,7 +5,7 @@
  *
  * @example
  * ```typescript
- * import { TickTickClient, Priority, Status } from './sdk';
+ * import { TickTickClient, Priority, TaskStatus, ChecklistItemStatus } from './sdk';
  *
  * const client = new TickTickClient({
  *   accessToken: 'your-oauth-access-token',
@@ -81,7 +81,7 @@ export type {
 // Enums
 // =============================================================================
 
-export { Priority, Status } from "./types.js";
+export { Priority, TaskStatus, ChecklistItemStatus } from "./types.js";
 
 // =============================================================================
 // Error Classes

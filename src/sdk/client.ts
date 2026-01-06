@@ -367,8 +367,8 @@ export class TickTickClient {
    *   dueDate: '2024-01-15T17:00:00+0000',
    *   priority: Priority.High,
    *   items: [
-   *     { title: 'Write introduction', status: Status.Normal },
-   *     { title: 'Add charts', status: Status.Normal },
+   *     { title: 'Write introduction', status: ChecklistItemStatus.Unchecked },
+   *     { title: 'Add charts', status: ChecklistItemStatus.Unchecked },
    *   ],
    * });
    * console.log(`Created task: ${task.id}`);
