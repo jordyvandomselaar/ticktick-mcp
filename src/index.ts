@@ -446,12 +446,44 @@ server.tool(
  */
 server.tool(
   "list_projects",
-  "List all projects in the user's TickTick account.",
-  {},
-  async () => {
+  "List all projects in the user's TickTick account with optional filtering. By default, only returns active (non-archived) projects.",
+  {
+    includeArchived: z.boolean().optional().describe("Include archived/closed projects (default: false)"),
+    kind: z.enum(['TASK', 'NOTE']).optional().describe("Filter by project type"),
+    viewMode: z.enum(['list', 'kanban', 'timeline']).optional().describe("Filter by view mode"),
+    search: z.string().optional().describe("Text search in project name (case-insensitive)"),
+    limit: z.number().optional().describe("Maximum number of projects to return"),
+  },
+  async ({ includeArchived, kind, viewMode, search, limit }) => {
     try {
       const client = await getClient();
-      const projects = await client.listProjects();
+      let projects = await client.listProjects();
+
+      // Filter out archived projects by default
+      if (!includeArchived) {
+        projects = projects.filter(p => !p.closed);
+      }
+
+      // Filter by kind
+      if (kind) {
+        projects = projects.filter(p => p.kind === kind);
+      }
+
+      // Filter by viewMode
+      if (viewMode) {
+        projects = projects.filter(p => p.viewMode === viewMode);
+      }
+
+      // Filter by search text
+      if (search) {
+        const searchLower = search.toLowerCase();
+        projects = projects.filter(p => p.name.toLowerCase().includes(searchLower));
+      }
+
+      // Apply limit
+      if (limit && limit > 0) {
+        projects = projects.slice(0, limit);
+      }
 
       return {
         content: [
@@ -653,7 +685,7 @@ server.tool(
       const project = await client.createProject({
         name,
         color,
-        viewMode,
+        viewMode: viewMode as any,
       });
 
       return {
@@ -726,7 +758,7 @@ server.tool(
       const project = await client.updateProject(projectId, {
         name,
         color,
-        viewMode,
+        viewMode: viewMode as any,
       });
 
       return {
@@ -840,14 +872,135 @@ server.tool(
  */
 server.tool(
   "list_tasks_in_project",
-  "List all tasks in a specific project. Returns only the tasks array without project metadata.",
+  "List all tasks in a specific project with optional client-side filtering and sorting. Returns only the tasks array without project metadata.",
   {
     projectId: z.string().describe("The ID of the project to list tasks from"),
+    status: z.enum(['active', 'completed', 'all']).optional().describe("Filter by task status (default: 'all')"),
+    priority: z.union([z.number(), z.array(z.number())]).optional().describe("Filter by priority: single value (0,1,3,5) or array [0,1,3,5]"),
+    dueBefore: z.string().optional().describe("ISO date - include only tasks due before this date"),
+    dueAfter: z.string().optional().describe("ISO date - include only tasks due after this date"),
+    startBefore: z.string().optional().describe("ISO date - include only tasks starting before this date"),
+    startAfter: z.string().optional().describe("ISO date - include only tasks starting after this date"),
+    hasSubtasks: z.boolean().optional().describe("Filter by presence of subtasks: true=with subtasks, false=without"),
+    tags: z.array(z.string()).optional().describe("Filter by tags - include tasks with any of these tags"),
+    search: z.string().optional().describe("Text search - filter tasks whose title or content contains this text (case-insensitive)"),
+    sortBy: z.enum(['dueDate', 'priority', 'title', 'createdTime', 'modifiedTime', 'sortOrder']).optional().describe("Field to sort by"),
+    sortDirection: z.enum(['asc', 'desc']).optional().describe("Sort direction (default: 'asc')"),
+    limit: z.number().optional().describe("Maximum number of tasks to return"),
   },
-  async ({ projectId }) => {
+  async ({ projectId, status, priority, dueBefore, dueAfter, startBefore, startAfter, hasSubtasks, tags, search, sortBy, sortDirection, limit }) => {
     try {
       const client = await getClient();
       const data = await client.getProjectWithTasks(projectId);
+
+      // Apply filters
+      let filteredTasks = data.tasks;
+
+      // Filter by status
+      if (status && status !== 'all') {
+        filteredTasks = filteredTasks.filter(t => {
+          if (status === 'active') return t.status === 0;
+          if (status === 'completed') return t.status === 2;
+          return true;
+        });
+      }
+
+      // Filter by priority
+      if (priority !== undefined) {
+        const priorities = Array.isArray(priority) ? priority : [priority];
+        filteredTasks = filteredTasks.filter(t => priorities.includes(t.priority));
+      }
+
+      // Filter by due date
+      if (dueBefore) {
+        const beforeDate = new Date(dueBefore);
+        filteredTasks = filteredTasks.filter(t => t.dueDate && new Date(t.dueDate) < beforeDate);
+      }
+      if (dueAfter) {
+        const afterDate = new Date(dueAfter);
+        filteredTasks = filteredTasks.filter(t => t.dueDate && new Date(t.dueDate) > afterDate);
+      }
+
+      // Filter by start date
+      if (startBefore) {
+        const beforeDate = new Date(startBefore);
+        filteredTasks = filteredTasks.filter(t => t.startDate && new Date(t.startDate) < beforeDate);
+      }
+      if (startAfter) {
+        const afterDate = new Date(startAfter);
+        filteredTasks = filteredTasks.filter(t => t.startDate && new Date(t.startDate) > afterDate);
+      }
+
+      // Filter by subtasks
+      if (hasSubtasks !== undefined) {
+        filteredTasks = filteredTasks.filter(t => {
+          const hasItems = t.items && t.items.length > 0;
+          return hasSubtasks ? hasItems : !hasItems;
+        });
+      }
+
+      // Filter by tags
+      if (tags && tags.length > 0) {
+        filteredTasks = filteredTasks.filter(t => {
+          return t.tags && t.tags.some(tag => tags.includes(tag));
+        });
+      }
+
+      // Filter by search text
+      if (search) {
+        const searchLower = search.toLowerCase();
+        filteredTasks = filteredTasks.filter(t => {
+          return t.title.toLowerCase().includes(searchLower) ||
+                 (t.content && t.content.toLowerCase().includes(searchLower));
+        });
+      }
+
+      // Apply sorting
+      if (sortBy) {
+        const direction = sortDirection === 'desc' ? -1 : 1;
+        filteredTasks.sort((a, b) => {
+          let aVal: any;
+          let bVal: any;
+
+          switch (sortBy) {
+            case 'dueDate':
+              aVal = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
+              bVal = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
+              break;
+            case 'priority':
+              aVal = a.priority;
+              bVal = b.priority;
+              break;
+            case 'title':
+              aVal = a.title.toLowerCase();
+              bVal = b.title.toLowerCase();
+              break;
+            case 'createdTime':
+              aVal = new Date(a.createdTime).getTime();
+              bVal = new Date(b.createdTime).getTime();
+              break;
+            case 'modifiedTime':
+              aVal = new Date(a.modifiedTime).getTime();
+              bVal = new Date(b.modifiedTime).getTime();
+              break;
+            case 'sortOrder':
+              aVal = a.sortOrder;
+              bVal = b.sortOrder;
+              break;
+            default:
+              return 0;
+          }
+
+          if (aVal < bVal) return -1 * direction;
+          if (aVal > bVal) return 1 * direction;
+          return 0;
+        });
+      }
+
+      // Apply limit
+      if (limit && limit > 0) {
+        filteredTasks = filteredTasks.slice(0, limit);
+      }
 
       return {
         content: [
@@ -856,8 +1009,9 @@ server.tool(
             text: JSON.stringify(
               {
                 success: true,
-                count: data.tasks.length,
-                tasks: data.tasks.map((t) => ({
+                total: data.tasks.length,
+                count: filteredTasks.length,
+                tasks: filteredTasks.map((t) => ({
                   id: t.id,
                   title: t.title,
                   content: t.content,
@@ -865,7 +1019,7 @@ server.tool(
                   status: t.status,
                   dueDate: t.dueDate,
                   startDate: t.startDate,
-                  allDay: t.allDay,
+                  isAllDay: t.isAllDay,
                   tags: t.tags,
                   items: t.items?.map((item) => ({
                     id: item.id,
@@ -929,7 +1083,7 @@ server.tool(
       .optional()
       .describe("Priority: 0=None, 1=Low, 3=Medium, 5=High"),
     tags: z.array(z.string()).optional().describe("Array of tag names"),
-    allDay: z
+    isAllDay: z
       .boolean()
       .optional()
       .describe("Whether this is an all-day task (no specific time)"),
@@ -964,7 +1118,7 @@ server.tool(
       .optional()
       .describe("Array of subtask/checklist items"),
   },
-  async ({ title, projectId, content, dueDate, priority, tags, allDay, startDate, timeZone, reminders, repeat, items }) => {
+  async ({ title, projectId, content, dueDate, priority, tags, isAllDay, startDate, timeZone, reminders, repeat, items }) => {
     try {
       const client = await getClient();
       const task = await client.createTask({
@@ -973,11 +1127,11 @@ server.tool(
         content,
         dueDate,
         priority,
-        allDay,
+        isAllDay,
         startDate,
         timeZone,
         reminders,
-        repeat,
+        repeatFlag: repeat,
         items,
       });
 
@@ -1003,10 +1157,10 @@ server.tool(
                   priority: finalTask.priority,
                   dueDate: finalTask.dueDate,
                   startDate: finalTask.startDate,
-                  allDay: finalTask.allDay,
+                  isAllDay: finalTask.isAllDay,
                   timeZone: finalTask.timeZone,
                   reminders: finalTask.reminders,
-                  repeat: finalTask.repeat,
+                  repeat: finalTask.repeatFlag,
                   status: finalTask.status,
                   tags: finalTask.tags,
                   items: finalTask.items?.map((item) => ({
@@ -1073,7 +1227,7 @@ server.tool(
       .string()
       .optional()
       .describe("Move task to a different project by specifying the target project ID"),
-    allDay: z
+    isAllDay: z
       .boolean()
       .optional()
       .describe("Whether this is an all-day task (no specific time)"),
@@ -1111,7 +1265,7 @@ server.tool(
       .optional()
       .describe("Array of subtask/checklist items. Note: This replaces existing items when provided."),
   },
-  async ({ taskId, title, content, dueDate, priority, tags, projectId, allDay, startDate, timeZone, reminders, repeat, items }) => {
+  async ({ taskId, title, content, dueDate, priority, tags, projectId, isAllDay, startDate, timeZone, reminders, repeat, items }) => {
     try {
       const client = await getClient();
       const task = await client.updateTask(taskId, {
@@ -1121,11 +1275,11 @@ server.tool(
         priority,
         tags,
         projectId,
-        allDay,
+        isAllDay,
         startDate,
         timeZone,
         reminders: reminders === null ? undefined : reminders,
-        repeat: repeat === null ? "" : repeat,
+        repeatFlag: repeat === null ? "" : repeat,
         items,
       });
 
@@ -1145,10 +1299,10 @@ server.tool(
                   priority: task.priority,
                   dueDate: task.dueDate,
                   startDate: task.startDate,
-                  allDay: task.allDay,
+                  isAllDay: task.isAllDay,
                   timeZone: task.timeZone,
                   reminders: task.reminders,
-                  repeat: task.repeat,
+                  repeat: task.repeatFlag,
                   status: task.status,
                   tags: task.tags,
                   items: task.items?.map((item) => ({
@@ -1330,7 +1484,7 @@ server.tool(
                   status: task.status,
                   dueDate: task.dueDate,
                   startDate: task.startDate,
-                  allDay: task.allDay,
+                  isAllDay: task.isAllDay,
                   tags: task.tags,
                   items: task.items.map((item) => ({
                     id: item.id,
@@ -1426,6 +1580,403 @@ server.tool(
                   priority: t.priority,
                   dueDate: t.dueDate,
                   status: t.status,
+                })),
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: false,
+                error: errorMessage,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+/**
+ * Tool: Get tasks due soon
+ *
+ * Returns tasks due within a specified number of days across all projects.
+ */
+server.tool(
+  "get_tasks_due_soon",
+  "Get tasks that are due soon (within the next N days). Useful for finding urgent work across all projects.",
+  {
+    days: z.number().optional().describe("Number of days to look ahead (default: 7)"),
+    includeOverdue: z.boolean().optional().describe("Include past-due tasks (default: true)"),
+    projectId: z.string().optional().describe("Optional: limit to a specific project"),
+    status: z.enum(['active', 'all']).optional().describe("Task status filter (default: 'active')"),
+  },
+  async ({ days = 7, includeOverdue = true, projectId, status = 'active' }) => {
+    try {
+      const client = await getClient();
+
+      // Calculate date range
+      const now = new Date();
+      const futureDate = new Date();
+      futureDate.setDate(now.getDate() + days);
+
+      let allTasks: any[] = [];
+
+      if (projectId) {
+        // Fetch tasks from specific project
+        const data = await client.getProjectWithTasks(projectId);
+        allTasks = data.tasks.map(t => ({
+          ...t,
+          projectName: data.project.name,
+        }));
+      } else {
+        // Fetch all projects and their tasks
+        const projects = await client.listProjects();
+        for (const project of projects) {
+          if (!project.closed) { // Skip archived projects
+            try {
+              const data = await client.getProjectWithTasks(project.id);
+              const tasksWithProject = data.tasks.map(t => ({
+                ...t,
+                projectName: project.name,
+              }));
+              allTasks = allTasks.concat(tasksWithProject);
+            } catch {
+              // Skip projects that can't be fetched
+              continue;
+            }
+          }
+        }
+      }
+
+      // Filter tasks
+      let filteredTasks = allTasks;
+
+      // Filter by status
+      if (status === 'active') {
+        filteredTasks = filteredTasks.filter(t => t.status === 0);
+      }
+
+      // Filter by due date
+      filteredTasks = filteredTasks.filter(t => {
+        if (!t.dueDate) return false;
+
+        const dueDate = new Date(t.dueDate);
+        const isOverdue = dueDate < now;
+        const isDueSoon = dueDate >= now && dueDate <= futureDate;
+
+        if (includeOverdue && isOverdue) return true;
+        if (isDueSoon) return true;
+        return false;
+      });
+
+      // Sort by due date ascending (earliest first)
+      filteredTasks.sort((a, b) => {
+        const aDate = new Date(a.dueDate).getTime();
+        const bDate = new Date(b.dueDate).getTime();
+        return aDate - bDate;
+      });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: true,
+                count: filteredTasks.length,
+                daysAhead: days,
+                tasks: filteredTasks.map(t => ({
+                  id: t.id,
+                  title: t.title,
+                  projectId: t.projectId,
+                  projectName: t.projectName,
+                  dueDate: t.dueDate,
+                  priority: t.priority,
+                  status: t.status,
+                  content: t.content,
+                  tags: t.tags,
+                })),
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: false,
+                error: errorMessage,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+/**
+ * Tool: Search tasks
+ *
+ * Search for tasks by keyword across all projects.
+ */
+server.tool(
+  "search_tasks",
+  "Search for tasks by keyword across all projects. Useful for finding tasks by text content.",
+  {
+    query: z.string().describe("Search term (required)"),
+    searchIn: z.array(z.enum(['title', 'content', 'desc'])).optional().describe("Fields to search in (default: ['title', 'content'])"),
+    projectIds: z.array(z.string()).optional().describe("Optional: limit to specific project IDs"),
+    status: z.enum(['active', 'completed', 'all']).optional().describe("Task status filter (default: 'active')"),
+    caseSensitive: z.boolean().optional().describe("Case-sensitive search (default: false)"),
+    limit: z.number().optional().describe("Maximum results to return (default: 20)"),
+  },
+  async ({ query, searchIn = ['title', 'content'], projectIds, status = 'active', caseSensitive = false, limit = 20 }) => {
+    try {
+      const client = await getClient();
+
+      const searchQuery = caseSensitive ? query : query.toLowerCase();
+      let allTasks: any[] = [];
+
+      if (projectIds && projectIds.length > 0) {
+        // Search in specific projects
+        for (const projectId of projectIds) {
+          try {
+            const data = await client.getProjectWithTasks(projectId);
+            const tasksWithProject = data.tasks.map(t => ({
+              ...t,
+              projectName: data.project.name,
+            }));
+            allTasks = allTasks.concat(tasksWithProject);
+          } catch {
+            continue;
+          }
+        }
+      } else {
+        // Search all projects
+        const projects = await client.listProjects();
+        for (const project of projects) {
+          if (!project.closed) {
+            try {
+              const data = await client.getProjectWithTasks(project.id);
+              const tasksWithProject = data.tasks.map(t => ({
+                ...t,
+                projectName: project.name,
+              }));
+              allTasks = allTasks.concat(tasksWithProject);
+            } catch {
+              continue;
+            }
+          }
+        }
+      }
+
+      // Filter by status
+      let filteredTasks = allTasks;
+      if (status === 'active') {
+        filteredTasks = filteredTasks.filter(t => t.status === 0);
+      } else if (status === 'completed') {
+        filteredTasks = filteredTasks.filter(t => t.status === 2);
+      }
+
+      // Search and collect matches
+      const matches: any[] = [];
+      for (const task of filteredTasks) {
+        const matchedIn: string[] = [];
+
+        for (const field of searchIn) {
+          let fieldValue = '';
+          if (field === 'title') fieldValue = task.title || '';
+          else if (field === 'content') fieldValue = task.content || '';
+          else if (field === 'desc') fieldValue = task.desc || '';
+
+          const searchText = caseSensitive ? fieldValue : fieldValue.toLowerCase();
+          if (searchText.includes(searchQuery)) {
+            matchedIn.push(field);
+          }
+        }
+
+        if (matchedIn.length > 0) {
+          matches.push({
+            ...task,
+            matchedIn,
+          });
+        }
+
+        if (matches.length >= limit) break;
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: true,
+                query: query,
+                count: matches.length,
+                tasks: matches.map(t => ({
+                  id: t.id,
+                  title: t.title,
+                  projectId: t.projectId,
+                  projectName: t.projectName,
+                  content: t.content,
+                  dueDate: t.dueDate,
+                  priority: t.priority,
+                  status: t.status,
+                  tags: t.tags,
+                  matchedIn: t.matchedIn,
+                })),
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: false,
+                error: errorMessage,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+/**
+ * Tool: Get high priority tasks
+ *
+ * Returns high priority tasks across all projects.
+ */
+server.tool(
+  "get_high_priority_tasks",
+  "Get high priority tasks across all projects. Useful for finding the most important work.",
+  {
+    minPriority: z.number().optional().describe("Minimum priority level: 0=None, 1=Low, 3=Medium, 5=High (default: 3)"),
+    projectId: z.string().optional().describe("Optional: limit to a specific project"),
+    includeCompleted: z.boolean().optional().describe("Include completed tasks (default: false)"),
+    limit: z.number().optional().describe("Maximum results to return (default: 10)"),
+  },
+  async ({ minPriority = 3, projectId, includeCompleted = false, limit = 10 }) => {
+    try {
+      const client = await getClient();
+
+      let allTasks: any[] = [];
+
+      if (projectId) {
+        // Fetch tasks from specific project
+        const data = await client.getProjectWithTasks(projectId);
+        allTasks = data.tasks.map(t => ({
+          ...t,
+          projectName: data.project.name,
+        }));
+      } else {
+        // Fetch all projects and their tasks
+        const projects = await client.listProjects();
+        for (const project of projects) {
+          if (!project.closed) {
+            try {
+              const data = await client.getProjectWithTasks(project.id);
+              const tasksWithProject = data.tasks.map(t => ({
+                ...t,
+                projectName: project.name,
+              }));
+              allTasks = allTasks.concat(tasksWithProject);
+            } catch {
+              continue;
+            }
+          }
+        }
+      }
+
+      // Filter tasks
+      let filteredTasks = allTasks;
+
+      // Filter by completion status
+      if (!includeCompleted) {
+        filteredTasks = filteredTasks.filter(t => t.status === 0);
+      }
+
+      // Filter by priority
+      filteredTasks = filteredTasks.filter(t => t.priority >= minPriority);
+
+      // Sort by priority desc (high first), then by dueDate asc (earliest first)
+      filteredTasks.sort((a, b) => {
+        // First sort by priority (descending)
+        if (a.priority !== b.priority) {
+          return b.priority - a.priority;
+        }
+        // Then by due date (ascending, nulls last)
+        if (a.dueDate && b.dueDate) {
+          return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+        }
+        if (a.dueDate) return -1;
+        if (b.dueDate) return 1;
+        return 0;
+      });
+
+      // Apply limit
+      filteredTasks = filteredTasks.slice(0, limit);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: true,
+                count: filteredTasks.length,
+                minPriority,
+                tasks: filteredTasks.map(t => ({
+                  id: t.id,
+                  title: t.title,
+                  projectId: t.projectId,
+                  projectName: t.projectName,
+                  dueDate: t.dueDate,
+                  priority: t.priority,
+                  status: t.status,
+                  content: t.content,
+                  tags: t.tags,
                 })),
               },
               null,

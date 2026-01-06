@@ -185,6 +185,10 @@ export class TickTickClient {
   /**
    * Get the current authenticated user's information.
    *
+   * @remarks
+   * Note: This endpoint is not officially documented in the TickTick Open API
+   * documentation but is functional and commonly used.
+   *
    * @returns The user's profile information
    * @throws {TickTickAuthError} If the access token is invalid or expired
    *
@@ -367,8 +371,8 @@ export class TickTickClient {
    *   dueDate: '2024-01-15T17:00:00+0000',
    *   priority: Priority.High,
    *   items: [
-   *     { title: 'Write introduction', status: Status.Normal },
-   *     { title: 'Add charts', status: Status.Normal },
+   *     { title: 'Write introduction', status: ChecklistItemStatus.Unchecked },
+   *     { title: 'Add charts', status: ChecklistItemStatus.Unchecked },
    *   ],
    * });
    * console.log(`Created task: ${task.id}`);
@@ -397,7 +401,10 @@ export class TickTickClient {
    * ```
    */
   async updateTask(taskId: string, input: UpdateTaskInput): Promise<Task> {
-    return this.post<Task>(`/task/${encodeURIComponent(taskId)}`, input);
+    return this.post<Task>(`/task/${encodeURIComponent(taskId)}`, {
+      id: taskId,
+      ...input,
+    });
   }
 
   /**
@@ -442,6 +449,10 @@ export class TickTickClient {
 
   /**
    * Create multiple tasks at once.
+   *
+   * @remarks
+   * Note: This endpoint is not officially documented in the TickTick Open API
+   * documentation but is functional and commonly used for bulk operations.
    *
    * @param tasks - Array of tasks to create
    * @returns Array of created tasks

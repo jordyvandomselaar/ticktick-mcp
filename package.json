@@ -5,12 +5,32 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "ticktick-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jordyvandomselaar/ticktick-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jordyvandomselaar/ticktick-mcp/issues"
+  },
+  "homepage": "https://github.com/jordyvandomselaar/ticktick-mcp#readme",
+  "author": "Jordy van Domselaar",
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "lint": "eslint src/",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest run --coverage"
   },
   "keywords": [
     "mcp",
@@ -28,8 +48,14 @@
     "zod": "^3.25.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "@types/eslint__js": "^8.42.3",
     "@types/node": "^22.0.0",
+    "@vitest/ui": "^4.0.16",
+    "eslint": "^9.39.2",
+    "tsx": "^4.19.0",
     "typescript": "^5.7.0",
-    "tsx": "^4.19.0"
+    "typescript-eslint": "^8.52.0",
+    "vitest": "^4.0.16"
   }
 }

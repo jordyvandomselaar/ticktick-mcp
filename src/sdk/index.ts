@@ -5,7 +5,7 @@
  *
  * @example
  * ```typescript
- * import { TickTickClient, Priority, Status } from './sdk';
+ * import { TickTickClient, Priority, TaskStatus, ChecklistItemStatus } from './sdk';
  *
  * const client = new TickTickClient({
  *   accessToken: 'your-oauth-access-token',
@@ -51,6 +51,7 @@ export type {
   CreateProjectInput,
   UpdateProjectInput,
   ProjectWithTasks,
+  Column,
 
   // Task
   Task,
@@ -69,9 +70,16 @@ export type {
   // Configuration
   TickTickClientConfig,
   Region,
-  ViewMode,
-  ProjectKind,
   TaskKind,
+  Permission,
+
+  // Reminders
+  ReminderTrigger,
+
+  // Recurrence
+  RecurrenceRule,
+  Frequency,
+  Weekday,
 
   // Errors
   ApiErrorResponse,
@@ -81,7 +89,29 @@ export type {
 // Enums
 // =============================================================================
 
-export { Priority, Status } from "./types.js";
+export { Priority, TaskStatus, ChecklistItemStatus, ViewMode, ProjectKind } from "./types.js";
+
+// =============================================================================
+// Reminder Helpers
+// =============================================================================
+
+export {
+  REMINDER_AT_TIME,
+  reminderMinutesBefore,
+  reminderHoursBefore,
+  reminderDaysBefore,
+} from "./types.js";
+
+// =============================================================================
+// Recurrence Helpers
+// =============================================================================
+
+export {
+  repeatDaily,
+  repeatWeekly,
+  repeatMonthly,
+  repeatYearly,
+} from "./types.js";
 
 // =============================================================================
 // Error Classes
