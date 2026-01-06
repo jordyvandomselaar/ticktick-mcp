@@ -11,16 +11,18 @@ export function registerSearchTasksTool(
   server: McpServer,
   getClient: () => Promise<TickTickClient>
 ) {
-  server.tool(
+  server.registerTool(
     "search_tasks",
-    "Search for tasks by keyword across all projects. Useful for finding tasks by text content.",
     {
-      query: z.string().describe("Search term (required)"),
-      searchIn: z.array(z.enum(['title', 'content', 'desc'])).optional().describe("Fields to search in (default: ['title', 'content'])"),
-      projectIds: z.array(z.string()).optional().describe("Optional: limit to specific project IDs"),
-      status: z.enum(['active', 'completed', 'all']).optional().describe("Task status filter (default: 'active')"),
-      caseSensitive: z.boolean().optional().describe("Case-sensitive search (default: false)"),
-      limit: z.number().optional().describe("Maximum results to return (default: 20)"),
+      description: "Search for tasks by keyword across all projects. Useful for finding tasks by text content.",
+      inputSchema: {
+        query: z.string().describe("Search term (required)"),
+        searchIn: z.array(z.enum(['title', 'content', 'desc'])).optional().describe("Fields to search in (default: ['title', 'content'])"),
+        projectIds: z.array(z.string()).optional().describe("Optional: limit to specific project IDs"),
+        status: z.enum(['active', 'completed', 'all']).optional().describe("Task status filter (default: 'active')"),
+        caseSensitive: z.boolean().optional().describe("Case-sensitive search (default: false)"),
+        limit: z.number().optional().describe("Maximum results to return (default: 20)"),
+      },
     },
     async ({ query, searchIn = ['title', 'content'], projectIds, status = 'active', caseSensitive = false, limit = 20 }) => {
       try {
