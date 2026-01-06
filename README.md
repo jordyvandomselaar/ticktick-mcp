@@ -97,6 +97,9 @@ Add to your Claude Desktop configuration (`~/Library/Application Support/Claude/
 - `complete_task` - Mark a task as complete
 - `delete_task` - Delete a task
 - `batch_create_tasks` - Create multiple tasks at once
+- `search_tasks` - Search for tasks by keyword across all projects
+- `get_tasks_due_soon` - Get tasks that are due soon (within the next N days)
+- `get_high_priority_tasks` - Get high priority tasks across all projects
 
 ## Authentication Flow
 
