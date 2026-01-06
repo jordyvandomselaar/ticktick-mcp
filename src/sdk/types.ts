@@ -241,6 +241,10 @@ export interface CreateTaskInput {
   priority?: Priority;
   /** Array of subtask/checklist items */
   items?: ChecklistItemInput[];
+  /** Position in task list */
+  sortOrder?: number;
+  /** Additional description */
+  desc?: string;
 }
 
 /**
@@ -314,6 +318,8 @@ export interface CreateProjectInput {
   viewMode?: ViewMode;
   /** Project type: "TASK" or "NOTE" */
   kind?: ProjectKind;
+  /** Position in project list */
+  sortOrder?: number;
 }
 
 /**
@@ -329,6 +335,8 @@ export interface UpdateProjectInput {
   viewMode?: ViewMode;
   /** Project type */
   kind?: ProjectKind;
+  /** Position in project list */
+  sortOrder?: number;
 }
 
 /**

@@ -1611,6 +1611,278 @@ server.tool(
   }
 );
 
+/**
+ * Tool: Get tasks due soon
+ *
+ * Returns tasks due within a specified number of days across all projects.
+ */
+server.tool(
+  "get_tasks_due_soon",
+  "Get tasks that are due soon (within the next N days). Useful for finding urgent work across all projects.",
+  {
+    days: z.number().optional().describe("Number of days to look ahead (default: 7)"),
+    includeOverdue: z.boolean().optional().describe("Include past-due tasks (default: true)"),
+    projectId: z.string().optional().describe("Optional: limit to a specific project"),
+    status: z.enum(['active', 'all']).optional().describe("Task status filter (default: 'active')"),
+  },
+  async ({ days = 7, includeOverdue = true, projectId, status = 'active' }) => {
+    try {
+      const client = await getClient();
+
+      // Calculate date range
+      const now = new Date();
+      const futureDate = new Date();
+      futureDate.setDate(now.getDate() + days);
+
+      let allTasks: any[] = [];
+
+      if (projectId) {
+        // Fetch tasks from specific project
+        const data = await client.getProjectWithTasks(projectId);
+        allTasks = data.tasks.map(t => ({
+          ...t,
+          projectName: data.project.name,
+        }));
+      } else {
+        // Fetch all projects and their tasks
+        const projects = await client.listProjects();
+        for (const project of projects) {
+          if (!project.closed) { // Skip archived projects
+            try {
+              const data = await client.getProjectWithTasks(project.id);
+              const tasksWithProject = data.tasks.map(t => ({
+                ...t,
+                projectName: project.name,
+              }));
+              allTasks = allTasks.concat(tasksWithProject);
+            } catch (err) {
+              // Skip projects that can't be fetched
+              continue;
+            }
+          }
+        }
+      }
+
+      // Filter tasks
+      let filteredTasks = allTasks;
+
+      // Filter by status
+      if (status === 'active') {
+        filteredTasks = filteredTasks.filter(t => t.status === 0);
+      }
+
+      // Filter by due date
+      filteredTasks = filteredTasks.filter(t => {
+        if (!t.dueDate) return false;
+
+        const dueDate = new Date(t.dueDate);
+        const isOverdue = dueDate < now;
+        const isDueSoon = dueDate >= now && dueDate <= futureDate;
+
+        if (includeOverdue && isOverdue) return true;
+        if (isDueSoon) return true;
+        return false;
+      });
+
+      // Sort by due date ascending (earliest first)
+      filteredTasks.sort((a, b) => {
+        const aDate = new Date(a.dueDate).getTime();
+        const bDate = new Date(b.dueDate).getTime();
+        return aDate - bDate;
+      });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: true,
+                count: filteredTasks.length,
+                daysAhead: days,
+                tasks: filteredTasks.map(t => ({
+                  id: t.id,
+                  title: t.title,
+                  projectId: t.projectId,
+                  projectName: t.projectName,
+                  dueDate: t.dueDate,
+                  priority: t.priority,
+                  status: t.status,
+                  content: t.content,
+                  tags: t.tags,
+                })),
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: false,
+                error: errorMessage,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+/**
+ * Tool: Search tasks
+ *
+ * Search for tasks by keyword across all projects.
+ */
+server.tool(
+  "search_tasks",
+  "Search for tasks by keyword across all projects. Useful for finding tasks by text content.",
+  {
+    query: z.string().describe("Search term (required)"),
+    searchIn: z.array(z.enum(['title', 'content', 'desc'])).optional().describe("Fields to search in (default: ['title', 'content'])"),
+    projectIds: z.array(z.string()).optional().describe("Optional: limit to specific project IDs"),
+    status: z.enum(['active', 'completed', 'all']).optional().describe("Task status filter (default: 'active')"),
+    caseSensitive: z.boolean().optional().describe("Case-sensitive search (default: false)"),
+    limit: z.number().optional().describe("Maximum results to return (default: 20)"),
+  },
+  async ({ query, searchIn = ['title', 'content'], projectIds, status = 'active', caseSensitive = false, limit = 20 }) => {
+    try {
+      const client = await getClient();
+
+      const searchQuery = caseSensitive ? query : query.toLowerCase();
+      let allTasks: any[] = [];
+
+      if (projectIds && projectIds.length > 0) {
+        // Search in specific projects
+        for (const projectId of projectIds) {
+          try {
+            const data = await client.getProjectWithTasks(projectId);
+            const tasksWithProject = data.tasks.map(t => ({
+              ...t,
+              projectName: data.project.name,
+            }));
+            allTasks = allTasks.concat(tasksWithProject);
+          } catch (err) {
+            continue;
+          }
+        }
+      } else {
+        // Search all projects
+        const projects = await client.listProjects();
+        for (const project of projects) {
+          if (!project.closed) {
+            try {
+              const data = await client.getProjectWithTasks(project.id);
+              const tasksWithProject = data.tasks.map(t => ({
+                ...t,
+                projectName: project.name,
+              }));
+              allTasks = allTasks.concat(tasksWithProject);
+            } catch (err) {
+              continue;
+            }
+          }
+        }
+      }
+
+      // Filter by status
+      let filteredTasks = allTasks;
+      if (status === 'active') {
+        filteredTasks = filteredTasks.filter(t => t.status === 0);
+      } else if (status === 'completed') {
+        filteredTasks = filteredTasks.filter(t => t.status === 2);
+      }
+
+      // Search and collect matches
+      const matches: any[] = [];
+      for (const task of filteredTasks) {
+        const matchedIn: string[] = [];
+
+        for (const field of searchIn) {
+          let fieldValue = '';
+          if (field === 'title') fieldValue = task.title || '';
+          else if (field === 'content') fieldValue = task.content || '';
+          else if (field === 'desc') fieldValue = task.desc || '';
+
+          const searchText = caseSensitive ? fieldValue : fieldValue.toLowerCase();
+          if (searchText.includes(searchQuery)) {
+            matchedIn.push(field);
+          }
+        }
+
+        if (matchedIn.length > 0) {
+          matches.push({
+            ...task,
+            matchedIn,
+          });
+        }
+
+        if (matches.length >= limit) break;
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: true,
+                query: query,
+                count: matches.length,
+                tasks: matches.map(t => ({
+                  id: t.id,
+                  title: t.title,
+                  projectId: t.projectId,
+                  projectName: t.projectName,
+                  content: t.content,
+                  dueDate: t.dueDate,
+                  priority: t.priority,
+                  status: t.status,
+                  tags: t.tags,
+                  matchedIn: t.matchedIn,
+                })),
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: false,
+                error: errorMessage,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
 // =============================================================================
 // Main Entry Point
 // =============================================================================
