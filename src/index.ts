@@ -1655,7 +1655,7 @@ server.tool(
                 projectName: project.name,
               }));
               allTasks = allTasks.concat(tasksWithProject);
-            } catch (err) {
+            } catch {
               // Skip projects that can't be fetched
               continue;
             }
@@ -1774,7 +1774,7 @@ server.tool(
               projectName: data.project.name,
             }));
             allTasks = allTasks.concat(tasksWithProject);
-          } catch (err) {
+          } catch {
             continue;
           }
         }
@@ -1790,7 +1790,7 @@ server.tool(
                 projectName: project.name,
               }));
               allTasks = allTasks.concat(tasksWithProject);
-            } catch (err) {
+            } catch {
               continue;
             }
           }
@@ -1922,7 +1922,7 @@ server.tool(
                 projectName: project.name,
               }));
               allTasks = allTasks.concat(tasksWithProject);
-            } catch (err) {
+            } catch {
               continue;
             }
           }
