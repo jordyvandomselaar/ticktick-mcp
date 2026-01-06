@@ -1,0 +1,1477 @@
+#!/usr/bin/env node
+
+/**
+ * TickTick MCP Server
+ *
+ * A Model Context Protocol server for integrating with TickTick task management.
+ * This server provides tools for OAuth authentication and task/project operations.
+ */
+
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { z } from "zod";
+import { TickTickOAuth, createOAuthFromEnv } from "./oauth.js";
+import { TickTickClient } from "./sdk/client.js";
+import type { Region } from "./sdk/types.js";
+
+// =============================================================================
+// Server Setup
+// =============================================================================
+
+const server = new McpServer({
+  name: "ticktick-mcp",
+  version: "0.1.0",
+});
+
+// OAuth helper instance - lazily initialized
+let oauthHelper: TickTickOAuth | null = null;
+
+/**
+ * Get or create the OAuth helper instance.
+ */
+function getOAuthHelper(): TickTickOAuth {
+  if (!oauthHelper) {
+    oauthHelper = createOAuthFromEnv();
+  }
+  return oauthHelper;
+}
+
+/**
+ * Get an authenticated TickTick client.
+ */
+async function getClient(): Promise<TickTickClient> {
+  const oauth = getOAuthHelper();
+  const accessToken = await oauth.getValidAccessToken();
+  const region = (process.env.TICKTICK_REGION as Region) ?? "global";
+  return new TickTickClient({ accessToken, region });
+}
+
+// =============================================================================
+// OAuth Authentication Tools
+// =============================================================================
+
+/**
+ * Tool: Get OAuth authorization URL
+ *
+ * Returns the URL that users should visit to authorize the application.
+ * This initiates the OAuth 2.0 authorization code flow.
+ */
+server.tool(
+  "auth_get_authorization_url",
+  "Get the OAuth authorization URL for TickTick. Returns a URL that the user should visit in their browser to authorize the application.",
+  {},
+  async () => {
+    try {
+      const oauth = getOAuthHelper();
+      const { url, state } = oauth.getAuthorizationUrl();
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: true,
+                authorizationUrl: url,
+                state: state,
+                instructions: [
+                  "1. Open the authorization URL in your browser",
+                  "2. Log in to TickTick and authorize the application",
+                  "3. After authorization, you will be redirected to a URL containing a 'code' parameter",
+                  "4. Copy the 'code' value from the URL",
+                  "5. Use the auth_exchange_code tool with the code to complete authentication",
+                ],
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: false,
+                error: errorMessage,
+                hint: "Make sure TICKTICK_CLIENT_ID and TICKTICK_CLIENT_SECRET environment variables are set",
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+/**
+ * Tool: Exchange authorization code for tokens
+ *
+ * Exchanges an authorization code (from the OAuth callback) for access and refresh tokens.
+ */
+server.tool(
+  "auth_exchange_code",
+  "Exchange an OAuth authorization code for access tokens. Use this after the user has authorized the application and received a code.",
+  {
+    code: z.string().describe("The authorization code from the OAuth callback URL"),
+  },
+  async ({ code }) => {
+    try {
+      const oauth = getOAuthHelper();
+      const tokens = await oauth.exchangeCode(code);
+      await oauth.storeToken(tokens);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: true,
+                message: "Authentication successful! Tokens have been stored.",
+                expiresIn: tokens.expires_in,
+                tokenType: tokens.token_type,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: false,
+                error: errorMessage,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+/**
+ * Tool: Check authentication status
+ *
+ * Returns information about the current authentication state.
+ */
+server.tool(
+  "auth_status",
+  "Check the current authentication status. Shows whether the user is authenticated and when the token expires.",
+  {},
+  async () => {
+    try {
+      const oauth = getOAuthHelper();
+      const status = await oauth.getAuthStatus();
+
+      if (!status.isAuthenticated) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  success: true,
+                  isAuthenticated: false,
+                  message:
+                    "Not authenticated. Use auth_get_authorization_url to start the OAuth flow.",
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: true,
+                isAuthenticated: true,
+                isExpired: status.isExpired,
+                expiresAt: status.expiresAt,
+                expiresIn: status.expiresIn,
+                message: status.isExpired
+                  ? "Token is expired. It will be automatically refreshed on next API call."
+                  : `Token is valid for ${status.expiresIn} more seconds.`,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: false,
+                error: errorMessage,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+/**
+ * Tool: Refresh access token
+ *
+ * Manually refresh the access token using the stored refresh token.
+ */
+server.tool(
+  "auth_refresh_token",
+  "Manually refresh the OAuth access token. Usually not needed as tokens are automatically refreshed when expired.",
+  {},
+  async () => {
+    try {
+      const oauth = getOAuthHelper();
+      const storedToken = await oauth.loadToken();
+
+      if (!storedToken) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  success: false,
+                  error: "Not authenticated. No stored token found.",
+                },
+                null,
+                2
+              ),
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      const newTokens = await oauth.refreshToken(storedToken.refreshToken);
+      await oauth.storeToken(newTokens);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: true,
+                message: "Token refreshed successfully!",
+                expiresIn: newTokens.expires_in,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: false,
+                error: errorMessage,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+/**
+ * Tool: Logout / Clear tokens
+ *
+ * Remove stored authentication tokens.
+ */
+server.tool(
+  "auth_logout",
+  "Remove stored authentication tokens. This will log out the user from the TickTick integration.",
+  {},
+  async () => {
+    try {
+      const oauth = getOAuthHelper();
+      await oauth.clearToken();
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: true,
+                message:
+                  "Logged out successfully. Stored tokens have been cleared.",
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: false,
+                error: errorMessage,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+// =============================================================================
+// User Tools
+// =============================================================================
+
+/**
+ * Tool: Get current user
+ *
+ * Returns information about the authenticated TickTick user.
+ */
+server.tool(
+  "get_user",
+  "Get the current authenticated user's information from TickTick.",
+  {},
+  async () => {
+    try {
+      const client = await getClient();
+      const user = await client.getUser();
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: true,
+                user: {
+                  id: user.id,
+                  username: user.username,
+                  name: user.name,
+                },
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: false,
+                error: errorMessage,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+// =============================================================================
+// Project Tools
+// =============================================================================
+
+/**
+ * Tool: List all projects
+ *
+ * Returns all projects for the authenticated user.
+ */
+server.tool(
+  "list_projects",
+  "List all projects in the user's TickTick account.",
+  {},
+  async () => {
+    try {
+      const client = await getClient();
+      const projects = await client.listProjects();
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: true,
+                count: projects.length,
+                projects: projects.map((p) => ({
+                  id: p.id,
+                  name: p.name,
+                  color: p.color,
+                  viewMode: p.viewMode,
+                  closed: p.closed,
+                })),
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: false,
+                error: errorMessage,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+/**
+ * Tool: Get project with tasks
+ *
+ * Returns a specific project and all its tasks.
+ */
+server.tool(
+  "get_project",
+  "Get a specific project and all its tasks.",
+  {
+    projectId: z.string().describe("The ID of the project to retrieve"),
+  },
+  async ({ projectId }) => {
+    try {
+      const client = await getClient();
+      const data = await client.getProjectWithTasks(projectId);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: true,
+                project: {
+                  id: data.project.id,
+                  name: data.project.name,
+                  color: data.project.color,
+                  viewMode: data.project.viewMode,
+                  closed: data.project.closed,
+                },
+                taskCount: data.tasks.length,
+                tasks: data.tasks.map((t) => ({
+                  id: t.id,
+                  title: t.title,
+                  content: t.content,
+                  priority: t.priority,
+                  status: t.status,
+                  dueDate: t.dueDate,
+                  tags: t.tags,
+                })),
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: false,
+                error: errorMessage,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+/**
+ * Tool: Get project by ID (metadata only)
+ *
+ * Returns a specific project's metadata without its tasks.
+ */
+server.tool(
+  "get_project_by_id",
+  "Get a specific project's metadata by ID (without tasks). Use this when you only need project info, not its tasks.",
+  {
+    projectId: z.string().describe("The ID of the project to retrieve"),
+  },
+  async ({ projectId }) => {
+    try {
+      const client = await getClient();
+      const project = await client.getProject(projectId);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: true,
+                project: {
+                  id: project.id,
+                  name: project.name,
+                  color: project.color,
+                  viewMode: project.viewMode,
+                  closed: project.closed,
+                },
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: false,
+                error: errorMessage,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+/**
+ * Tool: Create project
+ *
+ * Creates a new project.
+ */
+server.tool(
+  "create_project",
+  "Create a new project in TickTick.",
+  {
+    name: z.string().describe("The name of the project"),
+    color: z
+      .string()
+      .optional()
+      .describe('Hex color code (e.g., "#ff6b6b")'),
+    viewMode: z
+      .enum(["list", "kanban", "timeline"])
+      .optional()
+      .describe("View mode for the project"),
+  },
+  async ({ name, color, viewMode }) => {
+    try {
+      const client = await getClient();
+      const project = await client.createProject({
+        name,
+        color,
+        viewMode,
+      });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: true,
+                message: `Project "${project.name}" created successfully!`,
+                project: {
+                  id: project.id,
+                  name: project.name,
+                  color: project.color,
+                  viewMode: project.viewMode,
+                },
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: false,
+                error: errorMessage,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+/**
+ * Tool: Update project
+ *
+ * Updates an existing project.
+ */
+server.tool(
+  "update_project",
+  "Update an existing project in TickTick.",
+  {
+    projectId: z.string().describe("The ID of the project to update"),
+    name: z.string().optional().describe("New name for the project"),
+    color: z
+      .string()
+      .optional()
+      .describe('New hex color code (e.g., "#ff6b6b")'),
+    viewMode: z
+      .enum(["list", "kanban", "timeline"])
+      .optional()
+      .describe("New view mode for the project"),
+  },
+  async ({ projectId, name, color, viewMode }) => {
+    try {
+      const client = await getClient();
+      const project = await client.updateProject(projectId, {
+        name,
+        color,
+        viewMode,
+      });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: true,
+                message: `Project "${project.name}" updated successfully!`,
+                project: {
+                  id: project.id,
+                  name: project.name,
+                  color: project.color,
+                  viewMode: project.viewMode,
+                  closed: project.closed,
+                },
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: false,
+                error: errorMessage,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+/**
+ * Tool: Delete project
+ *
+ * Deletes a project.
+ */
+server.tool(
+  "delete_project",
+  "Delete a project from TickTick.",
+  {
+    projectId: z.string().describe("The ID of the project to delete"),
+  },
+  async ({ projectId }) => {
+    try {
+      const client = await getClient();
+      await client.deleteProject(projectId);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: true,
+                message: "Project deleted successfully!",
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: false,
+                error: errorMessage,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+// =============================================================================
+// Task Tools
+// =============================================================================
+
+/**
+ * Tool: List tasks in project
+ *
+ * Returns all tasks in a specific project (without project metadata).
+ * This is a convenience tool that wraps getProjectWithTasks but only returns tasks.
+ */
+server.tool(
+  "list_tasks_in_project",
+  "List all tasks in a specific project. Returns only the tasks array without project metadata.",
+  {
+    projectId: z.string().describe("The ID of the project to list tasks from"),
+  },
+  async ({ projectId }) => {
+    try {
+      const client = await getClient();
+      const data = await client.getProjectWithTasks(projectId);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: true,
+                count: data.tasks.length,
+                tasks: data.tasks.map((t) => ({
+                  id: t.id,
+                  title: t.title,
+                  content: t.content,
+                  priority: t.priority,
+                  status: t.status,
+                  dueDate: t.dueDate,
+                  startDate: t.startDate,
+                  allDay: t.allDay,
+                  tags: t.tags,
+                  items: t.items?.map((item) => ({
+                    id: item.id,
+                    title: item.title,
+                    status: item.status,
+                  })),
+                })),
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: false,
+                error: errorMessage,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+/**
+ * Tool: Create task
+ *
+ * Creates a new task.
+ */
+server.tool(
+  "create_task",
+  "Create a new task in TickTick.",
+  {
+    title: z.string().describe("The title of the task"),
+    projectId: z
+      .string()
+      .optional()
+      .describe("The project ID (defaults to inbox if not specified)"),
+    content: z.string().optional().describe("Task description/notes"),
+    dueDate: z
+      .string()
+      .optional()
+      .describe("Due date in ISO 8601 format (e.g., 2024-01-15T17:00:00+0000)"),
+    priority: z
+      .number()
+      .min(0)
+      .max(5)
+      .optional()
+      .describe("Priority: 0=None, 1=Low, 3=Medium, 5=High"),
+    tags: z.array(z.string()).optional().describe("Array of tag names"),
+    allDay: z
+      .boolean()
+      .optional()
+      .describe("Whether this is an all-day task (no specific time)"),
+    startDate: z
+      .string()
+      .optional()
+      .describe("Start date in ISO 8601 format (e.g., 2024-01-15T09:00:00+0000)"),
+    timeZone: z
+      .string()
+      .optional()
+      .describe("IANA timezone (e.g., 'America/New_York', 'Europe/London')"),
+    reminders: z
+      .array(z.string())
+      .optional()
+      .describe("Array of reminder strings in iCalendar TRIGGER format (e.g., 'TRIGGER:P0DT9H0M0S' for 9:00 AM, 'TRIGGER:-PT15M' for 15 minutes before)"),
+    repeat: z
+      .string()
+      .optional()
+      .describe("Recurrence rule in RRULE format (e.g., 'RRULE:FREQ=DAILY;INTERVAL=1' for daily, 'RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR' for Mon/Wed/Fri)"),
+    items: z
+      .array(
+        z.object({
+          title: z.string().describe("Subtask/checklist item text"),
+          status: z
+            .number()
+            .min(0)
+            .max(1)
+            .optional()
+            .describe("Status: 0=Unchecked (default), 1=Checked"),
+        })
+      )
+      .optional()
+      .describe("Array of subtask/checklist items"),
+  },
+  async ({ title, projectId, content, dueDate, priority, tags, allDay, startDate, timeZone, reminders, repeat, items }) => {
+    try {
+      const client = await getClient();
+      const task = await client.createTask({
+        title,
+        projectId,
+        content,
+        dueDate,
+        priority,
+        allDay,
+        startDate,
+        timeZone,
+        reminders,
+        repeat,
+        items,
+      });
+
+      // If tags are provided, update the task with tags
+      let finalTask = task;
+      if (tags && tags.length > 0) {
+        finalTask = await client.updateTask(task.id, { tags });
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: true,
+                message: `Task "${finalTask.title}" created successfully!`,
+                task: {
+                  id: finalTask.id,
+                  title: finalTask.title,
+                  projectId: finalTask.projectId,
+                  content: finalTask.content,
+                  priority: finalTask.priority,
+                  dueDate: finalTask.dueDate,
+                  startDate: finalTask.startDate,
+                  allDay: finalTask.allDay,
+                  timeZone: finalTask.timeZone,
+                  reminders: finalTask.reminders,
+                  repeat: finalTask.repeat,
+                  status: finalTask.status,
+                  tags: finalTask.tags,
+                  items: finalTask.items?.map((item) => ({
+                    id: item.id,
+                    title: item.title,
+                    status: item.status,
+                  })),
+                },
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: false,
+                error: errorMessage,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+/**
+ * Tool: Update task
+ *
+ * Updates an existing task.
+ */
+server.tool(
+  "update_task",
+  "Update an existing task in TickTick. Supports all task fields including scheduling, reminders, recurrence, and subtasks.",
+  {
+    taskId: z.string().describe("The ID of the task to update"),
+    title: z.string().optional().describe("New title for the task"),
+    content: z.string().optional().describe("New description/notes"),
+    dueDate: z
+      .string()
+      .nullable()
+      .optional()
+      .describe("New due date (ISO 8601) or null to remove"),
+    priority: z
+      .number()
+      .min(0)
+      .max(5)
+      .optional()
+      .describe("New priority: 0=None, 1=Low, 3=Medium, 5=High"),
+    tags: z.array(z.string()).optional().describe("Array of tag names"),
+    projectId: z
+      .string()
+      .optional()
+      .describe("Move task to a different project by specifying the target project ID"),
+    allDay: z
+      .boolean()
+      .optional()
+      .describe("Whether this is an all-day task (no specific time)"),
+    startDate: z
+      .string()
+      .nullable()
+      .optional()
+      .describe("Start date in ISO 8601 format (e.g., 2024-01-15T09:00:00+0000) or null to remove"),
+    timeZone: z
+      .string()
+      .optional()
+      .describe("IANA timezone (e.g., 'America/New_York', 'Europe/London')"),
+    reminders: z
+      .array(z.string())
+      .nullable()
+      .optional()
+      .describe("Array of reminder strings in iCalendar TRIGGER format (e.g., 'TRIGGER:P0DT9H0M0S' for 9:00 AM, 'TRIGGER:-PT15M' for 15 minutes before) or null to clear all reminders"),
+    repeat: z
+      .string()
+      .nullable()
+      .optional()
+      .describe("Recurrence rule in RRULE format (e.g., 'RRULE:FREQ=DAILY;INTERVAL=1' for daily, 'RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR' for Mon/Wed/Fri) or null to remove recurrence"),
+    items: z
+      .array(
+        z.object({
+          title: z.string().describe("Subtask/checklist item text"),
+          status: z
+            .number()
+            .min(0)
+            .max(1)
+            .optional()
+            .describe("Status: 0=Unchecked (default), 1=Checked"),
+        })
+      )
+      .optional()
+      .describe("Array of subtask/checklist items. Note: This replaces existing items when provided."),
+  },
+  async ({ taskId, title, content, dueDate, priority, tags, projectId, allDay, startDate, timeZone, reminders, repeat, items }) => {
+    try {
+      const client = await getClient();
+      const task = await client.updateTask(taskId, {
+        title,
+        content,
+        dueDate,
+        priority,
+        tags,
+        projectId,
+        allDay,
+        startDate,
+        timeZone,
+        reminders: reminders === null ? undefined : reminders,
+        repeat: repeat === null ? "" : repeat,
+        items,
+      });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: true,
+                message: `Task "${task.title}" updated successfully!`,
+                task: {
+                  id: task.id,
+                  title: task.title,
+                  projectId: task.projectId,
+                  content: task.content,
+                  priority: task.priority,
+                  dueDate: task.dueDate,
+                  startDate: task.startDate,
+                  allDay: task.allDay,
+                  timeZone: task.timeZone,
+                  reminders: task.reminders,
+                  repeat: task.repeat,
+                  status: task.status,
+                  tags: task.tags,
+                  items: task.items?.map((item) => ({
+                    id: item.id,
+                    title: item.title,
+                    status: item.status,
+                  })),
+                },
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: false,
+                error: errorMessage,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+/**
+ * Tool: Complete task
+ *
+ * Marks a task as complete.
+ */
+server.tool(
+  "complete_task",
+  "Mark a task as complete in TickTick.",
+  {
+    projectId: z.string().describe("The project ID containing the task"),
+    taskId: z.string().describe("The ID of the task to complete"),
+  },
+  async ({ projectId, taskId }) => {
+    try {
+      const client = await getClient();
+      await client.completeTask(projectId, taskId);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: true,
+                message: "Task completed successfully!",
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: false,
+                error: errorMessage,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+/**
+ * Tool: Delete task
+ *
+ * Deletes a task.
+ */
+server.tool(
+  "delete_task",
+  "Delete a task from TickTick.",
+  {
+    projectId: z.string().describe("The project ID containing the task"),
+    taskId: z.string().describe("The ID of the task to delete"),
+  },
+  async ({ projectId, taskId }) => {
+    try {
+      const client = await getClient();
+      await client.deleteTask(projectId, taskId);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: true,
+                message: "Task deleted successfully!",
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: false,
+                error: errorMessage,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+/**
+ * Tool: Get task
+ *
+ * Gets a specific task by ID.
+ */
+server.tool(
+  "get_task",
+  "Get a specific task from TickTick.",
+  {
+    projectId: z.string().describe("The project ID containing the task"),
+    taskId: z.string().describe("The ID of the task to retrieve"),
+  },
+  async ({ projectId, taskId }) => {
+    try {
+      const client = await getClient();
+      const task = await client.getTask(projectId, taskId);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: true,
+                task: {
+                  id: task.id,
+                  title: task.title,
+                  projectId: task.projectId,
+                  content: task.content,
+                  priority: task.priority,
+                  status: task.status,
+                  dueDate: task.dueDate,
+                  startDate: task.startDate,
+                  allDay: task.allDay,
+                  tags: task.tags,
+                  items: task.items.map((item) => ({
+                    id: item.id,
+                    title: item.title,
+                    status: item.status,
+                  })),
+                  createdTime: task.createdTime,
+                  modifiedTime: task.modifiedTime,
+                },
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: false,
+                error: errorMessage,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+/**
+ * Tool: Batch create tasks
+ *
+ * Creates multiple tasks at once.
+ */
+server.tool(
+  "batch_create_tasks",
+  "Create multiple tasks at once in TickTick. More efficient than creating tasks one by one.",
+  {
+    tasks: z
+      .array(
+        z.object({
+          title: z.string().describe("The title of the task (required)"),
+          projectId: z
+            .string()
+            .optional()
+            .describe("The project ID (defaults to inbox if not specified)"),
+          content: z.string().optional().describe("Task description/notes"),
+          priority: z
+            .number()
+            .min(0)
+            .max(5)
+            .optional()
+            .describe("Priority: 0=None, 1=Low, 3=Medium, 5=High"),
+          dueDate: z
+            .string()
+            .optional()
+            .describe(
+              "Due date in ISO 8601 format (e.g., 2024-01-15T17:00:00+0000)"
+            ),
+        })
+      )
+      .describe("Array of task objects to create"),
+  },
+  async ({ tasks }) => {
+    try {
+      const client = await getClient();
+      const createdTasks = await client.batchCreateTasks(tasks);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: true,
+                message: `Successfully created ${createdTasks.length} tasks!`,
+                count: createdTasks.length,
+                tasks: createdTasks.map((t) => ({
+                  id: t.id,
+                  title: t.title,
+                  projectId: t.projectId,
+                  content: t.content,
+                  priority: t.priority,
+                  dueDate: t.dueDate,
+                  status: t.status,
+                })),
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: false,
+                error: errorMessage,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+// =============================================================================
+// Main Entry Point
+// =============================================================================
+
+/**
+ * Main entry point - starts the MCP server using stdio transport.
+ * This allows the server to be spawned as a subprocess by MCP clients.
+ */
+async function main(): Promise<void> {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  console.error("TickTick MCP server running on stdio");
+}
+
+main().catch((error: unknown) => {
+  console.error("Fatal error in main():", error);
+  process.exit(1);
+});
