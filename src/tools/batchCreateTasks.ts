@@ -11,34 +11,36 @@ export function registerBatchCreateTasksTool(
   server: McpServer,
   getClient: () => Promise<TickTickClient>
 ) {
-  server.tool(
+  server.registerTool(
     "batch_create_tasks",
-    "Create multiple tasks at once in TickTick. More efficient than creating tasks one by one.",
     {
-      tasks: z
-        .array(
-          z.object({
-            title: z.string().describe("The title of the task (required)"),
-            projectId: z
-              .string()
-              .optional()
-              .describe("The project ID (defaults to inbox if not specified)"),
-            content: z.string().optional().describe("Task description/notes"),
-            priority: z
-              .number()
-              .min(0)
-              .max(5)
-              .optional()
-              .describe("Priority: 0=None, 1=Low, 3=Medium, 5=High"),
-            dueDate: z
-              .string()
-              .optional()
-              .describe(
-                "Due date in ISO 8601 format (e.g., 2024-01-15T17:00:00+0000)"
-              ),
-          })
-        )
-        .describe("Array of task objects to create"),
+      description: "Create multiple tasks at once in TickTick. More efficient than creating tasks one by one.",
+      inputSchema: {
+        tasks: z
+          .array(
+            z.object({
+              title: z.string().describe("The title of the task (required)"),
+              projectId: z
+                .string()
+                .optional()
+                .describe("The project ID (defaults to inbox if not specified)"),
+              content: z.string().optional().describe("Task description/notes"),
+              priority: z
+                .number()
+                .min(0)
+                .max(5)
+                .optional()
+                .describe("Priority: 0=None, 1=Low, 3=Medium, 5=High"),
+              dueDate: z
+                .string()
+                .optional()
+                .describe(
+                  "Due date in ISO 8601 format (e.g., 2024-01-15T17:00:00+0000)"
+                ),
+            })
+          )
+          .describe("Array of task objects to create"),
+      },
     },
     async ({ tasks }) => {
       try {

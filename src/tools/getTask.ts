@@ -11,12 +11,14 @@ export function registerGetTaskTool(
   server: McpServer,
   getClient: () => Promise<TickTickClient>
 ) {
-  server.tool(
+  server.registerTool(
     "get_task",
-    "Get a specific task from TickTick.",
     {
-      projectId: z.string().describe("The project ID containing the task"),
-      taskId: z.string().describe("The ID of the task to retrieve"),
+      description: "Get a specific task from TickTick.",
+      inputSchema: {
+        projectId: z.string().describe("The project ID containing the task"),
+        taskId: z.string().describe("The ID of the task to retrieve"),
+      },
     },
     async ({ projectId, taskId }) => {
       try {

@@ -12,23 +12,25 @@ export function registerListTasksInProjectTool(
   server: McpServer,
   getClient: () => Promise<TickTickClient>
 ) {
-  server.tool(
+  server.registerTool(
     "list_tasks_in_project",
-    "List all tasks in a specific project with optional client-side filtering and sorting. Returns only the tasks array without project metadata.",
     {
-      projectId: z.string().describe("The ID of the project to list tasks from"),
-      status: z.enum(['active', 'completed', 'all']).optional().describe("Filter by task status (default: 'all')"),
-      priority: z.union([z.number(), z.array(z.number())]).optional().describe("Filter by priority: single value (0,1,3,5) or array [0,1,3,5]"),
-      dueBefore: z.string().optional().describe("ISO date - include only tasks due before this date"),
-      dueAfter: z.string().optional().describe("ISO date - include only tasks due after this date"),
-      startBefore: z.string().optional().describe("ISO date - include only tasks starting before this date"),
-      startAfter: z.string().optional().describe("ISO date - include only tasks starting after this date"),
-      hasSubtasks: z.boolean().optional().describe("Filter by presence of subtasks: true=with subtasks, false=without"),
-      tags: z.array(z.string()).optional().describe("Filter by tags - include tasks with any of these tags"),
-      search: z.string().optional().describe("Text search - filter tasks whose title or content contains this text (case-insensitive)"),
-      sortBy: z.enum(['dueDate', 'priority', 'title', 'createdTime', 'modifiedTime', 'sortOrder']).optional().describe("Field to sort by"),
-      sortDirection: z.enum(['asc', 'desc']).optional().describe("Sort direction (default: 'asc')"),
-      limit: z.number().optional().describe("Maximum number of tasks to return"),
+      description: "List all tasks in a specific project with optional client-side filtering and sorting. Returns only the tasks array without project metadata.",
+      inputSchema: {
+        projectId: z.string().describe("The ID of the project to list tasks from"),
+        status: z.enum(['active', 'completed', 'all']).optional().describe("Filter by task status (default: 'all')"),
+        priority: z.union([z.number(), z.array(z.number())]).optional().describe("Filter by priority: single value (0,1,3,5) or array [0,1,3,5]"),
+        dueBefore: z.string().optional().describe("ISO date - include only tasks due before this date"),
+        dueAfter: z.string().optional().describe("ISO date - include only tasks due after this date"),
+        startBefore: z.string().optional().describe("ISO date - include only tasks starting before this date"),
+        startAfter: z.string().optional().describe("ISO date - include only tasks starting after this date"),
+        hasSubtasks: z.boolean().optional().describe("Filter by presence of subtasks: true=with subtasks, false=without"),
+        tags: z.array(z.string()).optional().describe("Filter by tags - include tasks with any of these tags"),
+        search: z.string().optional().describe("Text search - filter tasks whose title or content contains this text (case-insensitive)"),
+        sortBy: z.enum(['dueDate', 'priority', 'title', 'createdTime', 'modifiedTime', 'sortOrder']).optional().describe("Field to sort by"),
+        sortDirection: z.enum(['asc', 'desc']).optional().describe("Sort direction (default: 'asc')"),
+        limit: z.number().optional().describe("Maximum number of tasks to return"),
+      },
     },
     async ({ projectId, status, priority, dueBefore, dueAfter, startBefore, startAfter, hasSubtasks, tags, search, sortBy, sortDirection, limit }) => {
       try {

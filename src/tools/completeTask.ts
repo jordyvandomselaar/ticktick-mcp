@@ -11,12 +11,14 @@ export function registerCompleteTaskTool(
   server: McpServer,
   getClient: () => Promise<TickTickClient>
 ) {
-  server.tool(
+  server.registerTool(
     "complete_task",
-    "Mark a task as complete in TickTick.",
     {
-      projectId: z.string().describe("The project ID containing the task"),
-      taskId: z.string().describe("The ID of the task to complete"),
+      description: "Mark a task as complete in TickTick.",
+      inputSchema: {
+        projectId: z.string().describe("The project ID containing the task"),
+        taskId: z.string().describe("The ID of the task to complete"),
+      },
     },
     async ({ projectId, taskId }) => {
       try {

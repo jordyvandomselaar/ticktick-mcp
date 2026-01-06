@@ -11,11 +11,13 @@ export function registerDeleteProjectTool(
   server: McpServer,
   getClient: () => Promise<TickTickClient>
 ) {
-  server.tool(
+  server.registerTool(
     "delete_project",
-    "Delete a project from TickTick.",
     {
-      projectId: z.string().describe("The ID of the project to delete"),
+      description: "Delete a project from TickTick.",
+      inputSchema: {
+        projectId: z.string().describe("The ID of the project to delete"),
+      },
     },
     async ({ projectId }) => {
       try {

@@ -11,12 +11,14 @@ export function registerDeleteTaskTool(
   server: McpServer,
   getClient: () => Promise<TickTickClient>
 ) {
-  server.tool(
+  server.registerTool(
     "delete_task",
-    "Delete a task from TickTick.",
     {
-      projectId: z.string().describe("The project ID containing the task"),
-      taskId: z.string().describe("The ID of the task to delete"),
+      description: "Delete a task from TickTick.",
+      inputSchema: {
+        projectId: z.string().describe("The project ID containing the task"),
+        taskId: z.string().describe("The ID of the task to delete"),
+      },
     },
     async ({ projectId, taskId }) => {
       try {

@@ -11,14 +11,16 @@ export function registerGetHighPriorityTasksTool(
   server: McpServer,
   getClient: () => Promise<TickTickClient>
 ) {
-  server.tool(
+  server.registerTool(
     "get_high_priority_tasks",
-    "Get high priority tasks across all projects. Useful for finding the most important work.",
     {
-      minPriority: z.number().optional().describe("Minimum priority level: 0=None, 1=Low, 3=Medium, 5=High (default: 3)"),
-      projectId: z.string().optional().describe("Optional: limit to a specific project"),
-      includeCompleted: z.boolean().optional().describe("Include completed tasks (default: false)"),
-      limit: z.number().optional().describe("Maximum results to return (default: 10)"),
+      description: "Get high priority tasks across all projects. Useful for finding the most important work.",
+      inputSchema: {
+        minPriority: z.number().optional().describe("Minimum priority level: 0=None, 1=Low, 3=Medium, 5=High (default: 3)"),
+        projectId: z.string().optional().describe("Optional: limit to a specific project"),
+        includeCompleted: z.boolean().optional().describe("Include completed tasks (default: false)"),
+        limit: z.number().optional().describe("Maximum results to return (default: 10)"),
+      },
     },
     async ({ minPriority = 3, projectId, includeCompleted = false, limit = 10 }) => {
       try {

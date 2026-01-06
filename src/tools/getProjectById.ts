@@ -11,11 +11,13 @@ export function registerGetProjectByIdTool(
   server: McpServer,
   getClient: () => Promise<TickTickClient>
 ) {
-  server.tool(
+  server.registerTool(
     "get_project_by_id",
-    "Get a specific project's metadata by ID (without tasks). Use this when you only need project info, not its tasks.",
     {
-      projectId: z.string().describe("The ID of the project to retrieve"),
+      description: "Get a specific project's metadata by ID (without tasks). Use this when you only need project info, not its tasks.",
+      inputSchema: {
+        projectId: z.string().describe("The ID of the project to retrieve"),
+      },
     },
     async ({ projectId }) => {
       try {

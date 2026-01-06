@@ -10,10 +10,12 @@ export function registerAuthRefreshTokenTool(
   server: McpServer,
   getOAuthHelper: () => TickTickOAuth
 ) {
-  server.tool(
+  server.registerTool(
     "auth_refresh_token",
-    "Manually refresh the OAuth access token. Usually not needed as tokens are automatically refreshed when expired.",
-    {},
+    {
+      description: "Manually refresh the OAuth access token. Usually not needed as tokens are automatically refreshed when expired.",
+      inputSchema: {},
+    },
     async () => {
       try {
         const oauth = getOAuthHelper();

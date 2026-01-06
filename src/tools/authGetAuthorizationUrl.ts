@@ -11,10 +11,12 @@ export function registerAuthGetAuthorizationUrlTool(
   server: McpServer,
   getOAuthHelper: () => TickTickOAuth
 ) {
-  server.tool(
+  server.registerTool(
     "auth_get_authorization_url",
-    "Get the OAuth authorization URL for TickTick. Returns a URL that the user should visit in their browser to authorize the application.",
-    {},
+    {
+      description: "Get the OAuth authorization URL for TickTick. Returns a URL that the user should visit in their browser to authorize the application.",
+      inputSchema: {},
+    },
     async () => {
       try {
         const oauth = getOAuthHelper();

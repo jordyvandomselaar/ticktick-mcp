@@ -10,10 +10,12 @@ export function registerAuthStatusTool(
   server: McpServer,
   getOAuthHelper: () => TickTickOAuth
 ) {
-  server.tool(
+  server.registerTool(
     "auth_status",
-    "Check the current authentication status. Shows whether the user is authenticated and when the token expires.",
-    {},
+    {
+      description: "Check the current authentication status. Shows whether the user is authenticated and when the token expires.",
+      inputSchema: {},
+    },
     async () => {
       try {
         const oauth = getOAuthHelper();

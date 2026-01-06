@@ -10,10 +10,12 @@ export function registerAuthLogoutTool(
   server: McpServer,
   getOAuthHelper: () => TickTickOAuth
 ) {
-  server.tool(
+  server.registerTool(
     "auth_logout",
-    "Remove stored authentication tokens. This will log out the user from the TickTick integration.",
-    {},
+    {
+      description: "Remove stored authentication tokens. This will log out the user from the TickTick integration.",
+      inputSchema: {},
+    },
     async () => {
       try {
         const oauth = getOAuthHelper();

@@ -11,11 +11,13 @@ export function registerAuthExchangeCodeTool(
   server: McpServer,
   getOAuthHelper: () => TickTickOAuth
 ) {
-  server.tool(
+  server.registerTool(
     "auth_exchange_code",
-    "Exchange an OAuth authorization code for access tokens. Use this after the user has authorized the application and received a code.",
     {
-      code: z.string().describe("The authorization code from the OAuth callback URL"),
+      description: "Exchange an OAuth authorization code for access tokens. Use this after the user has authorized the application and received a code.",
+      inputSchema: {
+        code: z.string().describe("The authorization code from the OAuth callback URL"),
+      },
     },
     async ({ code }) => {
       try {

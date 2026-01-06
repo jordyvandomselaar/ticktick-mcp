@@ -11,20 +11,22 @@ export function registerUpdateProjectTool(
   server: McpServer,
   getClient: () => Promise<TickTickClient>
 ) {
-  server.tool(
+  server.registerTool(
     "update_project",
-    "Update an existing project in TickTick.",
     {
-      projectId: z.string().describe("The ID of the project to update"),
-      name: z.string().optional().describe("New name for the project"),
-      color: z
-        .string()
-        .optional()
-        .describe('New hex color code (e.g., "#ff6b6b")'),
-      viewMode: z
-        .enum(["list", "kanban", "timeline"])
-        .optional()
-        .describe("New view mode for the project"),
+      description: "Update an existing project in TickTick.",
+      inputSchema: {
+        projectId: z.string().describe("The ID of the project to update"),
+        name: z.string().optional().describe("New name for the project"),
+        color: z
+          .string()
+          .optional()
+          .describe('New hex color code (e.g., "#ff6b6b")'),
+        viewMode: z
+          .enum(["list", "kanban", "timeline"])
+          .optional()
+          .describe("New view mode for the project"),
+      },
     },
     async ({ projectId, name, color, viewMode }) => {
       try {

@@ -10,10 +10,12 @@ export function registerGetUserTool(
   server: McpServer,
   getClient: () => Promise<TickTickClient>
 ) {
-  server.tool(
+  server.registerTool(
     "get_user",
-    "Get the current authenticated user's information from TickTick.",
-    {},
+    {
+      description: "Get the current authenticated user's information from TickTick.",
+      inputSchema: {},
+    },
     async () => {
       try {
         const client = await getClient();

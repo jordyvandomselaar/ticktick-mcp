@@ -11,14 +11,16 @@ export function registerGetTasksDueSoonTool(
   server: McpServer,
   getClient: () => Promise<TickTickClient>
 ) {
-  server.tool(
+  server.registerTool(
     "get_tasks_due_soon",
-    "Get tasks that are due soon (within the next N days). Useful for finding urgent work across all projects.",
     {
-      days: z.number().optional().describe("Number of days to look ahead (default: 7)"),
-      includeOverdue: z.boolean().optional().describe("Include past-due tasks (default: true)"),
-      projectId: z.string().optional().describe("Optional: limit to a specific project"),
-      status: z.enum(['active', 'all']).optional().describe("Task status filter (default: 'active')"),
+      description: "Get tasks that are due soon (within the next N days). Useful for finding urgent work across all projects.",
+      inputSchema: {
+        days: z.number().optional().describe("Number of days to look ahead (default: 7)"),
+        includeOverdue: z.boolean().optional().describe("Include past-due tasks (default: true)"),
+        projectId: z.string().optional().describe("Optional: limit to a specific project"),
+        status: z.enum(['active', 'all']).optional().describe("Task status filter (default: 'active')"),
+      },
     },
     async ({ days = 7, includeOverdue = true, projectId, status = 'active' }) => {
       try {

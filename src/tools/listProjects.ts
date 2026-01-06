@@ -11,15 +11,17 @@ export function registerListProjectsTool(
   server: McpServer,
   getClient: () => Promise<TickTickClient>
 ) {
-  server.tool(
+  server.registerTool(
     "list_projects",
-    "List all projects in the user's TickTick account with optional filtering. By default, only returns active (non-archived) projects.",
     {
-      includeArchived: z.boolean().optional().describe("Include archived/closed projects (default: false)"),
-      kind: z.enum(['TASK', 'NOTE']).optional().describe("Filter by project type"),
-      viewMode: z.enum(['list', 'kanban', 'timeline']).optional().describe("Filter by view mode"),
-      search: z.string().optional().describe("Text search in project name (case-insensitive)"),
-      limit: z.number().optional().describe("Maximum number of projects to return"),
+      description: "List all projects in the user's TickTick account with optional filtering. By default, only returns active (non-archived) projects.",
+      inputSchema: {
+        includeArchived: z.boolean().optional().describe("Include archived/closed projects (default: false)"),
+        kind: z.enum(['TASK', 'NOTE']).optional().describe("Filter by project type"),
+        viewMode: z.enum(['list', 'kanban', 'timeline']).optional().describe("Filter by view mode"),
+        search: z.string().optional().describe("Text search in project name (case-insensitive)"),
+        limit: z.number().optional().describe("Maximum number of projects to return"),
+      },
     },
     async ({ includeArchived, kind, viewMode, search, limit }) => {
       try {

@@ -11,19 +11,21 @@ export function registerCreateProjectTool(
   server: McpServer,
   getClient: () => Promise<TickTickClient>
 ) {
-  server.tool(
+  server.registerTool(
     "create_project",
-    "Create a new project in TickTick.",
     {
-      name: z.string().describe("The name of the project"),
-      color: z
-        .string()
-        .optional()
-        .describe('Hex color code (e.g., "#ff6b6b")'),
-      viewMode: z
-        .enum(["list", "kanban", "timeline"])
-        .optional()
-        .describe("View mode for the project"),
+      description: "Create a new project in TickTick.",
+      inputSchema: {
+        name: z.string().describe("The name of the project"),
+        color: z
+          .string()
+          .optional()
+          .describe('Hex color code (e.g., "#ff6b6b")'),
+        viewMode: z
+          .enum(["list", "kanban", "timeline"])
+          .optional()
+          .describe("View mode for the project"),
+      },
     },
     async ({ name, color, viewMode }) => {
       try {
