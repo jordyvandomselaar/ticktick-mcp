@@ -21,6 +21,26 @@ export function registerGetProjectTool(
     },
     async ({ projectId }) => {
       try {
+        // Handle "inbox" special case - it's not a regular project
+        if (projectId.toLowerCase() === "inbox") {
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    success: false,
+                    error: 'Inbox is not a project. Use list_tasks_in_project with projectId "inbox" to retrieve inbox tasks.',
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+            isError: true,
+          };
+        }
+
         const client = await getClient();
         const data = await client.getProjectWithTasks(projectId);
 
