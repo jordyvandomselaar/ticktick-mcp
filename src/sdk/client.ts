@@ -397,7 +397,10 @@ export class TickTickClient {
    * ```
    */
   async updateTask(taskId: string, input: UpdateTaskInput): Promise<Task> {
-    return this.post<Task>(`/task/${encodeURIComponent(taskId)}`, input);
+    return this.post<Task>(`/task/${encodeURIComponent(taskId)}`, {
+      id: taskId,
+      ...input,
+    });
   }
 
   /**

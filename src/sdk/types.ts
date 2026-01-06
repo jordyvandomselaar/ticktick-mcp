@@ -11,11 +11,16 @@
 
 /**
  * Task priority levels.
+ * Values match TickTick API: 0=None, 1=Low, 3=Medium, 5=High
  */
 export enum Priority {
+  /** No priority set (default) */
   None = 0,
+  /** Low priority - can wait */
   Low = 1,
+  /** Medium priority - should be done soon */
   Medium = 3,
+  /** High priority - urgent/important */
   High = 5,
 }
 
@@ -53,7 +58,12 @@ export type ProjectKind = "TASK" | "NOTE";
 /**
  * Task kind.
  */
-export type TaskKind = "TEXT";
+export type TaskKind = "TEXT" | "NOTE" | "CHECKLIST";
+
+/**
+ * Project permission level.
+ */
+export type Permission = "read" | "write" | "comment";
 
 /**
  * API region configuration.
@@ -276,6 +286,8 @@ export interface Project {
   viewMode: ViewMode;
   /** Project type: "TASK" or "NOTE" */
   kind: ProjectKind;
+  /** Permission level: "read", "write", or "comment" */
+  permission?: Permission;
 }
 
 /**
@@ -308,13 +320,29 @@ export interface UpdateProjectInput {
 }
 
 /**
- * Project data including all tasks.
+ * Column in a Kanban board.
+ */
+export interface Column {
+  /** Unique column identifier */
+  id: string;
+  /** Project ID this column belongs to */
+  projectId: string;
+  /** Column name */
+  name: string;
+  /** Position in column list */
+  sortOrder: number;
+}
+
+/**
+ * Project data including all tasks and columns.
  */
 export interface ProjectWithTasks {
   /** The project */
   project: Project;
   /** All tasks in the project */
   tasks: Task[];
+  /** Kanban columns (for kanban view projects) */
+  columns: Column[];
 }
 
 // =============================================================================

@@ -51,6 +51,7 @@ export type {
   CreateProjectInput,
   UpdateProjectInput,
   ProjectWithTasks,
+  Column,
 
   // Task
   Task,
@@ -72,6 +73,7 @@ export type {
   ViewMode,
   ProjectKind,
   TaskKind,
+  Permission,
 
   // Errors
   ApiErrorResponse,
