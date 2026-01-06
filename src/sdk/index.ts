@@ -73,6 +73,14 @@ export type {
   TaskKind,
   Permission,
 
+  // Reminders
+  ReminderTrigger,
+
+  // Recurrence
+  RecurrenceRule,
+  Frequency,
+  Weekday,
+
   // Errors
   ApiErrorResponse,
 } from "./types.js";
@@ -82,6 +90,28 @@ export type {
 // =============================================================================
 
 export { Priority, TaskStatus, ChecklistItemStatus, ViewMode, ProjectKind } from "./types.js";
+
+// =============================================================================
+// Reminder Helpers
+// =============================================================================
+
+export {
+  REMINDER_AT_TIME,
+  reminderMinutesBefore,
+  reminderHoursBefore,
+  reminderDaysBefore,
+} from "./types.js";
+
+// =============================================================================
+// Recurrence Helpers
+// =============================================================================
+
+export {
+  repeatDaily,
+  repeatWeekly,
+  repeatMonthly,
+  repeatYearly,
+} from "./types.js";
 
 // =============================================================================
 // Error Classes

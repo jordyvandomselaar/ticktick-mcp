@@ -83,6 +83,167 @@ export type Permission = "read" | "write" | "comment";
 export type Region = "global" | "china";
 
 // =============================================================================
+// Reminder Helpers
+// =============================================================================
+
+/**
+ * Reminder trigger in iCalendar TRIGGER format.
+ * Examples: 'TRIGGER:PT0S' (at time), 'TRIGGER:-PT15M' (15 minutes before)
+ */
+export type ReminderTrigger = string;
+
+/**
+ * Reminder at the exact time of the task.
+ */
+export const REMINDER_AT_TIME: ReminderTrigger = "TRIGGER:PT0S";
+
+/**
+ * Create a reminder trigger for X minutes before the task.
+ *
+ * @param minutes - Number of minutes before the task (positive number)
+ * @returns iCalendar TRIGGER string
+ *
+ * @example
+ * ```typescript
+ * reminderMinutesBefore(15)  // 15 minutes before
+ * reminderMinutesBefore(30)  // 30 minutes before
+ * ```
+ */
+export function reminderMinutesBefore(minutes: number): ReminderTrigger {
+  return `TRIGGER:-PT${minutes}M`;
+}
+
+/**
+ * Create a reminder trigger for X hours before the task.
+ *
+ * @param hours - Number of hours before the task (positive number)
+ * @returns iCalendar TRIGGER string
+ *
+ * @example
+ * ```typescript
+ * reminderHoursBefore(1)   // 1 hour before
+ * reminderHoursBefore(24)  // 1 day before
+ * ```
+ */
+export function reminderHoursBefore(hours: number): ReminderTrigger {
+  return `TRIGGER:-PT${hours}H`;
+}
+
+/**
+ * Create a reminder trigger for X days before the task.
+ *
+ * @param days - Number of days before the task (positive number)
+ * @returns iCalendar TRIGGER string
+ *
+ * @example
+ * ```typescript
+ * reminderDaysBefore(1)  // 1 day before
+ * reminderDaysBefore(7)  // 1 week before
+ * ```
+ */
+export function reminderDaysBefore(days: number): ReminderTrigger {
+  return `TRIGGER:-P${days}D`;
+}
+
+// =============================================================================
+// Recurrence Helpers
+// =============================================================================
+
+/**
+ * Recurrence rule in iCalendar RRULE format.
+ * Examples: 'RRULE:FREQ=DAILY;INTERVAL=1', 'RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE,FR'
+ */
+export type RecurrenceRule = string;
+
+/**
+ * Recurrence frequency types.
+ */
+export type Frequency = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
+
+/**
+ * Days of the week in iCalendar format.
+ */
+export type Weekday = 'MO' | 'TU' | 'WE' | 'TH' | 'FR' | 'SA' | 'SU';
+
+/**
+ * Create a daily recurrence rule.
+ *
+ * @param interval - Number of days between recurrences (default: 1 = every day)
+ * @returns iCalendar RRULE string
+ *
+ * @example
+ * ```typescript
+ * repeatDaily()      // Every day
+ * repeatDaily(1)     // Every day
+ * repeatDaily(2)     // Every 2 days
+ * repeatDaily(7)     // Every week (7 days)
+ * ```
+ */
+export function repeatDaily(interval = 1): RecurrenceRule {
+  return `RRULE:FREQ=DAILY;INTERVAL=${interval}`;
+}
+
+/**
+ * Create a weekly recurrence rule.
+ *
+ * @param interval - Number of weeks between recurrences (default: 1 = every week)
+ * @param days - Optional array of weekdays (e.g., ['MO', 'WE', 'FR'] for Mon/Wed/Fri)
+ * @returns iCalendar RRULE string
+ *
+ * @example
+ * ```typescript
+ * repeatWeekly()                      // Every week
+ * repeatWeekly(1)                     // Every week
+ * repeatWeekly(2)                     // Every 2 weeks
+ * repeatWeekly(1, ['MO', 'WE', 'FR']) // Every Mon, Wed, Fri
+ * repeatWeekly(2, ['SA', 'SU'])       // Every other weekend
+ * ```
+ */
+export function repeatWeekly(interval = 1, days?: Weekday[]): RecurrenceRule {
+  let rule = `RRULE:FREQ=WEEKLY;INTERVAL=${interval}`;
+  if (days?.length) {
+    rule += `;BYDAY=${days.join(',')}`;
+  }
+  return rule;
+}
+
+/**
+ * Create a monthly recurrence rule.
+ *
+ * @param interval - Number of months between recurrences (default: 1 = every month)
+ * @returns iCalendar RRULE string
+ *
+ * @example
+ * ```typescript
+ * repeatMonthly()    // Every month
+ * repeatMonthly(1)   // Every month
+ * repeatMonthly(3)   // Every quarter (3 months)
+ * repeatMonthly(6)   // Every 6 months
+ * repeatMonthly(12)  // Every year (12 months)
+ * ```
+ */
+export function repeatMonthly(interval = 1): RecurrenceRule {
+  return `RRULE:FREQ=MONTHLY;INTERVAL=${interval}`;
+}
+
+/**
+ * Create a yearly recurrence rule.
+ *
+ * @param interval - Number of years between recurrences (default: 1 = every year)
+ * @returns iCalendar RRULE string
+ *
+ * @example
+ * ```typescript
+ * repeatYearly()     // Every year
+ * repeatYearly(1)    // Every year
+ * repeatYearly(2)    // Every 2 years
+ * ```
+ */
+export function repeatYearly(interval = 1): RecurrenceRule {
+  return `RRULE:FREQ=YEARLY;INTERVAL=${interval}`;
+}
+
+// =============================================================================
 // User
 // =============================================================================
 
@@ -173,7 +334,11 @@ export interface Task {
   dueDate: string | null;
   /** IANA timezone */
   timeZone: string;
-  /** Whether the date is timezone-independent */
+  /**
+   * Whether the date is timezone-independent (floating).
+   * Note: Field is present in API responses but not documented in official API docs.
+   * Floating dates are not anchored to a specific timezone.
+   */
   isFloating: boolean;
 
   // Reminders & Recurrence
@@ -193,7 +358,11 @@ export interface Task {
   // Organization
   /** Position in list */
   sortOrder: number;
-  /** Array of tag names */
+  /**
+   * Array of tag names.
+   * Note: Tags field is present in API responses but not documented in official API docs.
+   * Field has been verified to work in practice.
+   */
   tags: string[];
 
   // Subtasks
