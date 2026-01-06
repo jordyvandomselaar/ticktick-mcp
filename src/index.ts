@@ -446,12 +446,44 @@ server.tool(
  */
 server.tool(
   "list_projects",
-  "List all projects in the user's TickTick account.",
-  {},
-  async () => {
+  "List all projects in the user's TickTick account with optional filtering. By default, only returns active (non-archived) projects.",
+  {
+    includeArchived: z.boolean().optional().describe("Include archived/closed projects (default: false)"),
+    kind: z.enum(['TASK', 'NOTE']).optional().describe("Filter by project type"),
+    viewMode: z.enum(['list', 'kanban', 'timeline']).optional().describe("Filter by view mode"),
+    search: z.string().optional().describe("Text search in project name (case-insensitive)"),
+    limit: z.number().optional().describe("Maximum number of projects to return"),
+  },
+  async ({ includeArchived, kind, viewMode, search, limit }) => {
     try {
       const client = await getClient();
-      const projects = await client.listProjects();
+      let projects = await client.listProjects();
+
+      // Filter out archived projects by default
+      if (!includeArchived) {
+        projects = projects.filter(p => !p.closed);
+      }
+
+      // Filter by kind
+      if (kind) {
+        projects = projects.filter(p => p.kind === kind);
+      }
+
+      // Filter by viewMode
+      if (viewMode) {
+        projects = projects.filter(p => p.viewMode === viewMode);
+      }
+
+      // Filter by search text
+      if (search) {
+        const searchLower = search.toLowerCase();
+        projects = projects.filter(p => p.name.toLowerCase().includes(searchLower));
+      }
+
+      // Apply limit
+      if (limit && limit > 0) {
+        projects = projects.slice(0, limit);
+      }
 
       return {
         content: [
@@ -840,7 +872,7 @@ server.tool(
  */
 server.tool(
   "list_tasks_in_project",
-  "List all tasks in a specific project with optional client-side filtering. Returns only the tasks array without project metadata.",
+  "List all tasks in a specific project with optional client-side filtering and sorting. Returns only the tasks array without project metadata.",
   {
     projectId: z.string().describe("The ID of the project to list tasks from"),
     status: z.enum(['active', 'completed', 'all']).optional().describe("Filter by task status (default: 'all')"),
@@ -852,9 +884,11 @@ server.tool(
     hasSubtasks: z.boolean().optional().describe("Filter by presence of subtasks: true=with subtasks, false=without"),
     tags: z.array(z.string()).optional().describe("Filter by tags - include tasks with any of these tags"),
     search: z.string().optional().describe("Text search - filter tasks whose title or content contains this text (case-insensitive)"),
+    sortBy: z.enum(['dueDate', 'priority', 'title', 'createdTime', 'modifiedTime', 'sortOrder']).optional().describe("Field to sort by"),
+    sortDirection: z.enum(['asc', 'desc']).optional().describe("Sort direction (default: 'asc')"),
     limit: z.number().optional().describe("Maximum number of tasks to return"),
   },
-  async ({ projectId, status, priority, dueBefore, dueAfter, startBefore, startAfter, hasSubtasks, tags, search, limit }) => {
+  async ({ projectId, status, priority, dueBefore, dueAfter, startBefore, startAfter, hasSubtasks, tags, search, sortBy, sortDirection, limit }) => {
     try {
       const client = await getClient();
       const data = await client.getProjectWithTasks(projectId);
@@ -918,6 +952,48 @@ server.tool(
         filteredTasks = filteredTasks.filter(t => {
           return t.title.toLowerCase().includes(searchLower) ||
                  (t.content && t.content.toLowerCase().includes(searchLower));
+        });
+      }
+
+      // Apply sorting
+      if (sortBy) {
+        const direction = sortDirection === 'desc' ? -1 : 1;
+        filteredTasks.sort((a, b) => {
+          let aVal: any;
+          let bVal: any;
+
+          switch (sortBy) {
+            case 'dueDate':
+              aVal = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
+              bVal = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
+              break;
+            case 'priority':
+              aVal = a.priority;
+              bVal = b.priority;
+              break;
+            case 'title':
+              aVal = a.title.toLowerCase();
+              bVal = b.title.toLowerCase();
+              break;
+            case 'createdTime':
+              aVal = new Date(a.createdTime).getTime();
+              bVal = new Date(b.createdTime).getTime();
+              break;
+            case 'modifiedTime':
+              aVal = new Date(a.modifiedTime).getTime();
+              bVal = new Date(b.modifiedTime).getTime();
+              break;
+            case 'sortOrder':
+              aVal = a.sortOrder;
+              bVal = b.sortOrder;
+              break;
+            default:
+              return 0;
+          }
+
+          if (aVal < bVal) return -1 * direction;
+          if (aVal > bVal) return 1 * direction;
+          return 0;
         });
       }
 
