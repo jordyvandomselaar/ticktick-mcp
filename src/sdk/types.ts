@@ -46,14 +46,26 @@ export enum ChecklistItemStatus {
 }
 
 /**
- * Project view modes.
+ * Project view modes available in TickTick.
  */
-export type ViewMode = "list" | "kanban" | "timeline";
+export enum ViewMode {
+  /** Traditional list view - tasks in a vertical list */
+  List = 'list',
+  /** Kanban board view - tasks in columns by status */
+  Kanban = 'kanban',
+  /** Timeline/Gantt view - tasks on a calendar timeline */
+  Timeline = 'timeline',
+}
 
 /**
- * Project/task kind.
+ * Types of projects in TickTick.
  */
-export type ProjectKind = "TASK" | "NOTE";
+export enum ProjectKind {
+  /** Standard task list project */
+  Task = 'TASK',
+  /** Note-taking project */
+  Note = 'NOTE',
+}
 
 /**
  * Task kind.

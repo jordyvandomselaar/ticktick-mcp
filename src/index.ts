@@ -685,7 +685,7 @@ server.tool(
       const project = await client.createProject({
         name,
         color,
-        viewMode,
+        viewMode: viewMode as any,
       });
 
       return {
@@ -758,7 +758,7 @@ server.tool(
       const project = await client.updateProject(projectId, {
         name,
         color,
-        viewMode,
+        viewMode: viewMode as any,
       });
 
       return {

@@ -70,8 +70,6 @@ export type {
   // Configuration
   TickTickClientConfig,
   Region,
-  ViewMode,
-  ProjectKind,
   TaskKind,
   Permission,
 
@@ -83,7 +81,7 @@ export type {
 // Enums
 // =============================================================================
 
-export { Priority, TaskStatus, ChecklistItemStatus } from "./types.js";
+export { Priority, TaskStatus, ChecklistItemStatus, ViewMode, ProjectKind } from "./types.js";
 
 // =============================================================================
 // Error Classes
